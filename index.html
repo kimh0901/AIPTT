@@ -112,7 +112,7 @@ const PRESETS = [
   {id:'bold',name:'巨型字體',desc:'白底黑字，黃色塊當重心',bg:'#FFFFFF',surface:'#FAFAFA',ink:'#0A0A0A',sub:'#5A5A5A',accent:'#FFD400',accent2:'#0A0A0A',rule:'#E4E4E4',grid:false,radius:0,serif:false,prompt:'語氣直接，每頁只講一件事，要點極短，最多八個字。'},
   {id:'sunrise',name:'晨光',desc:'漸暖底色，橘紅重點',bg:'#FFF6EE',surface:'#FFFFFF',ink:'#2A1D16',sub:'#7A6255',accent:'#E8622B',accent2:'#2F7D8C',rule:'#EBD9C9',grid:false,radius:8,serif:false,prompt:'語氣溫和好懂，適合對非技術聽眾說明。'}
 ];
-const LAYOUTS = {cover:'封面',agenda:'目錄',bullets:'條列',twoCol:'雙欄對照',stat:'數據重點',quote:'引言',closing:'結尾'};
+const LAYOUTS = {cover:'封面',agenda:'目錄',bullets:'條列',twoCol:'雙欄對照',stat:'數據重點',chart:'資料圖表',quote:'引言',closing:'結尾'};
 /* ============================================================
    課程主辦方請把這一行改成你的 Worker 網址，學員就不用自備金鑰。
    例：const COURSE_ENDPOINT = 'https://slideforge.你的帳號.workers.dev';
@@ -175,7 +175,7 @@ let S = {
   styleTab:'manual', msName:'', msBg:'#0E2233', msInk:'#EAF4FA', msAccent:'#3FD2C7', msRadius:0, msSerif:false,
   styleId: LS.get('styleId','blueprint'),
   styles: PRESETS.concat(LS.get('customStyles',[])),
-  materials: [], slides: [],
+  materials: [], tables: [], slides: [],
   economy: LS.get('economy',true),
   cfg: Object.assign(
     COURSE_ENDPOINT
@@ -200,7 +200,7 @@ function bumpUsage(){ const u=usage(); u.n++; LS.set('usage',u); return u.n; }
 const draft = LS.get('draft',null);
 if(draft){
   Object.assign(S,{topic:draft.topic||'',audience:draft.audience||S.audience,tone:draft.tone||S.tone,
-    materials:draft.materials||[],slides:draft.slides||[],styleId:draft.styleId||S.styleId,
+    materials:draft.materials||[],tables:draft.tables||[],slides:draft.slides||[],styleId:draft.styleId||S.styleId,
     brief:draft.brief||'',md:draft.md||'',scenario:draft.scenario||null,plan:draft.plan||'',
     uploads:draft.uploads||[],step:Math.min(5,Math.max(1,draft.step||1))});
   if(S.slides.length) S.wizard=false;
@@ -208,7 +208,7 @@ if(draft){
 const curStyle = ()=> S.styles.find(s=>s.id===S.styleId) || S.styles[0];
 const saveCustom = ()=> LS.set('customStyles', S.styles.filter(s=>!PRESETS.some(p=>p.id===s.id)));
 const saveDraft = ()=> LS.set('draft',{topic:S.topic,audience:S.audience,tone:S.tone,styleId:S.styleId,
-  slides:S.slides,materials:S.materials,brief:S.brief,md:S.md,step:S.step,scenario:S.scenario,plan:S.plan,uploads:S.uploads});
+  slides:S.slides,materials:S.materials,tables:S.tables,brief:S.brief,md:S.md,step:S.step,scenario:S.scenario,plan:S.plan,uploads:S.uploads});
 function aiReady(){ return S.cfg.provider==='ollama' ? true : !!S.cfg.key; }
 function modelLabel(){
   const m=S.cfg.model||'';
@@ -293,8 +293,10 @@ async function askOnce(system, text, img){
     pick = d => (((d.choices||[])[0]||{}).message||{}).content||'';
 
   }else{
-    url = c.base.replace(/\/$/,'')+'/v1beta/models/'+encodeURIComponent(c.model)+':generateContent';
-    headers = {'content-type':'application/json','x-goog-api-key':c.key};
+    /* 瀏覽器直連 Gemini 時用查詢參數傳金鑰，避免 GitHub Pages 的 CORS 預檢
+       因 x-goog-api-key 自訂標頭而被瀏覽器擋下。 */
+    url = c.base.replace(/\/$/,'')+'/v1beta/models/'+encodeURIComponent(c.model)+':generateContent?key='+encodeURIComponent(c.key);
+    headers = {'content-type':'application/json'};
     const parts = img ? [{inline_data:{mime_type:img.media,data:img.b64}},{text}] : [{text}];
     body = {systemInstruction:{parts:[{text:system}]},contents:[{role:'user',parts}],
       generationConfig:{maxOutputTokens:mt,temperature:0.7}};
@@ -313,8 +315,8 @@ async function askOnce(system, text, img){
      收到 404 時，先依這把金鑰實際看得到的 models 清單選一個文字生成模型，再自動重試一次。 */
   if(!res.ok && res.status===404 && proto==='gemini'){
     try{
-      const listUrl=c.base.replace(/\/$/,'')+'/v1beta/models?pageSize=1000';
-      const listRes=await fetch(listUrl,{headers:{'x-goog-api-key':c.key}});
+      const listUrl=c.base.replace(/\/$/,'')+'/v1beta/models?pageSize=1000&key='+encodeURIComponent(c.key);
+      const listRes=await fetch(listUrl);
       if(listRes.ok){
         const data=await listRes.json();
         const available=(data.models||[])
@@ -326,7 +328,7 @@ async function askOnce(system, text, img){
         if(next){
           c.model=next;
           LS.set('cfg',c);
-          url=c.base.replace(/\/$/,'')+'/v1beta/models/'+encodeURIComponent(next)+':generateContent';
+          url=c.base.replace(/\/$/,'')+'/v1beta/models/'+encodeURIComponent(next)+':generateContent?key='+encodeURIComponent(c.key);
           res=await fetch(url,{method:'POST',headers,body:JSON.stringify(body)});
         }
       }
@@ -505,6 +507,53 @@ function pickFile(accept,cb){
   i.click();
 }
 
+function chartValueLabel(n){
+  const v=Number(n)||0, a=Math.abs(v);
+  if(a>=1000000) return (v/1000000).toFixed(a>=10000000?0:1)+'M';
+  if(a>=1000) return (v/1000).toFixed(a>=10000?0:1)+'K';
+  return Number.isInteger(v)?v.toLocaleString():v.toFixed(1);
+}
+function renderChartHTML(chart,st){
+  chart=chart||{};
+  const labels=(chart.labels||[]).slice(0,10), series=(chart.series||[]).slice(0,2);
+  if(labels.length<2||!series.length) return `<div style="display:grid;place-items:center;height:390px;border:1px dashed ${st.rule};color:${st.sub};font-size:22px">請從 Excel／CSV 建立圖表資料</div>`;
+  const colors=[st.accent,st.accent2,mix(st.accent,st.ink,.42),mix(st.accent2,st.ink,.42)];
+  const legend=series.map((s,i)=>`<span style="display:inline-flex;align-items:center;gap:8px;margin-right:22px"><i style="width:12px;height:12px;background:${colors[i]};display:inline-block;border-radius:2px"></i>${esc(s.name)}</span>`).join('');
+  const source=`<div style="position:absolute;right:0;bottom:-28px;font-size:13px;color:${st.sub}">資料來源：${esc(chart.source||'使用者上傳資料')}</div>`;
+  if(chart.type==='doughnut'){
+    const vals=(series[0].values||[]).slice(0,labels.length).map(v=>Math.max(0,Number(v)||0));
+    const total=vals.reduce((a,b)=>a+b,0)||1; let at=0;
+    const stops=vals.map((v,i)=>{ const from=at, to=at+v/total*100; at=to; return `${colors[i%colors.length]} ${from}% ${to}%`; }).join(',');
+    const items=labels.map((label,i)=>`<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;font-size:18px;color:${st.ink}"><i style="width:13px;height:13px;background:${colors[i%colors.length]};display:block"></i><span style="flex:1">${esc(label)}</span><b style="font-family:'IBM Plex Mono',monospace">${chartValueLabel(vals[i])}</b><span style="width:52px;text-align:right;color:${st.sub}">${(vals[i]/total*100).toFixed(1)}%</span></div>`).join('');
+    return `<div style="height:390px;display:grid;grid-template-columns:420px 1fr;align-items:center;gap:64px;position:relative"><div style="width:330px;height:330px;border-radius:50%;background:conic-gradient(${stops});display:grid;place-items:center;margin:auto"><div style="width:190px;height:190px;border-radius:50%;background:${st.bg};display:grid;place-items:center;text-align:center"><div><b style="display:block;font-size:34px;color:${st.ink}">${chartValueLabel(total)}</b><span style="font-size:14px;color:${st.sub}">合計</span></div></div></div><div>${items}</div>${source}</div>`;
+  }
+  const all=series.flatMap(s=>(s.values||[]).slice(0,labels.length).map(v=>Math.max(0,Number(v)||0)));
+  const max=Math.max(1,...all), W=1080,H=350, top=18,bottom=62;
+  let marks='';
+  if(chart.type==='bar'){
+    const labelW=190, plotW=W-labelW-55, rowH=(H-25)/labels.length;
+    labels.forEach((label,i)=>{
+      marks+=`<text x="${labelW-12}" y="${i*rowH+rowH*.58}" text-anchor="end" fill="${st.sub}" font-size="15">${esc(label.slice(0,13))}</text>`;
+      series.forEach((s,si)=>{ const v=Math.max(0,Number((s.values||[])[i])||0), bh=Math.min(16,rowH/(series.length+1)), y=i*rowH+rowH*.2+si*(bh+4), w=v/max*plotW;
+        marks+=`<rect x="${labelW}" y="${y}" width="${w}" height="${bh}" rx="${Math.min(4,st.radius)}" fill="${colors[si]}"/><text x="${labelW+w+8}" y="${y+bh-2}" fill="${st.ink}" font-size="13">${chartValueLabel(v)}</text>`; });
+    });
+  }else if(chart.type==='line'){
+    const plotX=35, plotW=W-70, plotH=H-bottom-top;
+    [0,.25,.5,.75,1].forEach(q=>{ const y=top+plotH*(1-q); marks+=`<line x1="${plotX}" y1="${y}" x2="${plotX+plotW}" y2="${y}" stroke="${st.rule}" stroke-width="1"/>`; });
+    series.forEach((s,si)=>{ const pts=labels.map((_,i)=>{ const x=plotX+(labels.length===1?0:i/(labels.length-1))*plotW, v=Math.max(0,Number((s.values||[])[i])||0), y=top+plotH-(v/max*plotH); return {x,y,v}; });
+      marks+=`<polyline points="${pts.map(p=>p.x+','+p.y).join(' ')}" fill="none" stroke="${colors[si]}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>`;
+      pts.forEach(p=>{ marks+=`<circle cx="${p.x}" cy="${p.y}" r="6" fill="${st.bg}" stroke="${colors[si]}" stroke-width="4"/>`; }); });
+    labels.forEach((label,i)=>{ const x=plotX+(labels.length===1?0:i/(labels.length-1))*plotW; marks+=`<text x="${x}" y="${H-24}" text-anchor="middle" fill="${st.sub}" font-size="14">${esc(label.slice(0,9))}</text>`; });
+  }else{
+    const plotX=25, plotW=W-50, plotH=H-bottom-top, group=plotW/labels.length, gap=8, barW=Math.max(6,Math.min(42,(group-20)/series.length));
+    [0,.25,.5,.75,1].forEach(q=>{ const y=top+plotH*(1-q); marks+=`<line x1="${plotX}" y1="${y}" x2="${plotX+plotW}" y2="${y}" stroke="${st.rule}" stroke-width="1"/>`; });
+    labels.forEach((label,i)=>{ series.forEach((s,si)=>{ const v=Math.max(0,Number((s.values||[])[i])||0), h=v/max*plotH, x=plotX+i*group+(group-series.length*barW-(series.length-1)*gap)/2+si*(barW+gap), y=top+plotH-h;
+        marks+=`<rect x="${x}" y="${y}" width="${barW}" height="${h}" rx="${Math.min(4,st.radius)}" fill="${colors[si]}"/>`; });
+      marks+=`<text x="${plotX+i*group+group/2}" y="${H-24}" text-anchor="middle" fill="${st.sub}" font-size="14">${esc(label.slice(0,8))}</text>`; });
+  }
+  return `<div style="height:390px;position:relative"><div style="height:28px;font-size:15px;color:${st.sub}">${legend}</div><svg viewBox="0 0 ${W} ${H}" style="display:block;width:100%;height:340px;overflow:visible;font-family:${SANS}">${marks}</svg>${source}</div>`;
+}
+
 /* ---------- 版面引擎：把一頁資料畫成 HTML ---------- */
 function renderSlide(s, st, idx, total, editable){
   const P=76, ed = editable ? ' contenteditable="true" spellcheck="false"' : '';
@@ -545,6 +594,12 @@ function renderSlide(s, st, idx, total, editable){
       ${kickerLine(18)}
       ${E('stat:value', (s.stat&&s.stat.value)||'—', `font-size:168px;font-weight:700;line-height:1;font-family:${display};color:${st.accent};letter-spacing:-4px`)}
       ${E('stat:label', (s.stat&&s.stat.label)||'', `font-size:28px;margin-top:24px;max-width:860px;line-height:1.5;color:${st.ink}`)}
+    </div>`;
+  }else if(s.layout==='chart'){
+    inner = `<div style="position:absolute;inset:0;padding:${P}px;display:flex;flex-direction:column">
+      ${kickerLine(10)}
+      ${E('title',s.title||'資料圖表',`font-size:42px;font-weight:700;font-family:${display};line-height:1.2;margin-bottom:20px;color:${st.ink}`)}
+      ${renderChartHTML(s.chart,st)}
     </div>`;
   }else if(s.layout==='quote'){
     inner = `<div style="position:absolute;inset:0;padding:${P}px;display:flex;flex-direction:column;justify-content:center">
@@ -842,13 +897,17 @@ async function parseUpload(file){
 
   if(['txt','md','markdown','csv','tsv'].includes(ext)){
     const raw=await file.text();
-    return (ext==='csv'||ext==='tsv') ? tableDigest(name, csvRows(raw, ext==='tsv'?'\t':',')) : raw;
+    if(ext==='csv'||ext==='tsv'){
+      const table=tableRecord(name,csvRows(raw,ext==='tsv'?'\t':','));
+      return {text:tableDigest(table.title,[table.headers].concat(table.rows)),tables:[table]};
+    }
+    return {text:raw,tables:[]};
   }
 
   if(ext==='docx'){
     const mammoth=(await loadLib('mammoth')).lib;
     const r=await mammoth.extractRawText({arrayBuffer:await file.arrayBuffer()});
-    return r.value.trim();
+    return {text:r.value.trim(),tables:[]};
   }
 
   if(ext==='pdf'){
@@ -861,16 +920,17 @@ async function parseUpload(file){
     }
     const text=out.filter(Boolean).join('\n\n');
     if(!text.trim()) throw new Error('這份 PDF 讀不到文字，可能是掃描檔或圖片檔。請改用可選取文字的 PDF，或直接把內容貼進框裡。');
-    return text + (doc.numPages>pages?`\n\n（原檔共 ${doc.numPages} 頁，只讀取前 ${pages} 頁）`:'');
+    return {text:text + (doc.numPages>pages?`\n\n（原檔共 ${doc.numPages} 頁，只讀取前 ${pages} 頁）`:''),tables:[]};
   }
 
   if(ext==='xlsx'||ext==='xls'){
     const XLSX=(await loadLib('xlsx')).lib;
     const wb=XLSX.read(await file.arrayBuffer(),{type:'array'});
-    return wb.SheetNames.slice(0,3).map(sn=>{
+    const tables=wb.SheetNames.slice(0,3).map(sn=>{
       const rows=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,blankrows:false,defval:''});
-      return tableDigest(`${name} / 工作表：${sn}`, rows);
-    }).join('\n\n');
+      return tableRecord(`${name} / 工作表：${sn}`,rows);
+    }).filter(t=>t.headers.length);
+    return {text:tables.map(t=>tableDigest(t.title,[t.headers].concat(t.rows))).join('\n\n'),tables};
   }
 
   throw new Error(`還不支援 .${ext} 這種檔案。可以先另存成 PDF、Word、Excel 或純文字，或直接把內容貼進框裡。`);
@@ -879,6 +939,27 @@ async function parseUpload(file){
 function csvRows(raw, sep){
   return raw.replace(/\r/g,'').split('\n').filter(l=>l.trim())
     .map(l=>l.split(sep).map(c=>c.replace(/^"|"$/g,'').trim()));
+}
+
+function tableRecord(title,rows){
+  rows=(rows||[]).filter(r=>r && r.some(c=>String(c).trim()!==''));
+  if(!rows.length) return {id:uid(),title,headers:[],rows:[]};
+  const headers=rows[0].map((c,i)=>String(c).trim()||('欄位 '+(i+1)));
+  const body=rows.slice(1,201).map(r=>headers.map((_,i)=>String(r[i]==null?'':r[i]).trim()));
+  return {id:uid(),title,headers,rows:body};
+}
+function ensureBriefTables(){
+  if((S.tables||[]).some(t=>numericColumns(t).length)) return;
+  const lines=String(S.brief||'').replace(/\r/g,'').split('\n'), groups=[]; let cur=[];
+  const flush=()=>{ if(cur.length>=3) groups.push(cur); cur=[]; };
+  lines.forEach(line=>{ if((line.match(/\|/g)||[]).length>=2) cur.push(line); else flush(); }); flush();
+  groups.forEach((group,gi)=>{
+    const rows=group.map(line=>line.split('|').map(x=>x.trim()).filter((_,i,a)=>!(i===0&&a[i]==='')&&!(i===a.length-1&&a[i]==='')))
+      .filter((row,i)=>!(i===1&&row.every(cell=>/^:?-{2,}:?$/.test(cell))));
+    const table=tableRecord('貼上素材 / 資料表 '+(gi+1),rows); table.origin='brief';
+    if(numericColumns(table).length) S.tables.push(table);
+  });
+  if(groups.length) saveDraft();
 }
 
 /* 把表格轉成文字，並且先在本機算好統計，不要讓 AI 自己加總 */
@@ -917,13 +998,115 @@ async function handleUpload(file, done2){
   if(!file) return;
   toast(`讀取 ${file.name}`);
   try{
-    const text=await parseUpload(file);
+    const parsed=await parseUpload(file), text=parsed.text;
     S.brief = (S.brief||'').trim() ? (S.brief.trim()+'\n\n'+text) : text;
-    S.uploads=(S.uploads||[]).concat([{id:uid(), name:file.name, len:text.length, text}]);
+    S.tables=(S.tables||[]).concat(parsed.tables||[]);
+    S.uploads=(S.uploads||[]).concat([{id:uid(), name:file.name, len:text.length, text,
+      tableIds:(parsed.tables||[]).map(t=>t.id)}]);
     saveDraft(); done(); if(done2) done2();
   }catch(e){
     fail(e.message);
   }
+}
+
+/* ---------- AI 圖表助手：AI 選欄位，本機取值與繪圖 ---------- */
+function chartNum(value){
+  let t=String(value==null?'':value).trim();
+  const neg=/^\(.*\)$/.test(t); t=t.replace(/[(),，\s%％]/g,'').replace(/^\+/, '');
+  if(t===''||!Number.isFinite(Number(t))) return null;
+  return (neg?-1:1)*Number(t);
+}
+function numericColumns(table){
+  return (table.headers||[]).map((name,index)=>{
+    const vals=(table.rows||[]).map(r=>chartNum(r[index])).filter(v=>v!==null);
+    return {name,index,count:vals.length};
+  }).filter(c=>c.index>0 && c.count>=Math.max(2,Math.ceil((table.rows||[]).length*.5)));
+}
+function chartTableInfo(table){
+  const nums=numericColumns(table);
+  const summaries=nums.map(col=>{
+    let pairs=(table.rows||[]).map(r=>({label:String(r[0]||''),value:chartNum(r[col.index])})).filter(x=>x.value!==null);
+    if(pairs.length>3) pairs=pairs.filter(x=>!/(總計|合計|total)/i.test(x.label));
+    if(!pairs.length) return `${col.name}（數值欄）`;
+    const top=pairs.slice().sort((a,b)=>b.value-a.value)[0];
+    return `${col.name}（${pairs.length} 筆；最高：${top.label} ${top.value}）`;
+  });
+  return {id:table.id,title:table.title,headers:table.headers,numeric:summaries,
+    sample:(table.rows||[]).slice(0,6)};
+}
+function buildChartPrompt(){
+  const tables=(S.tables||[]).filter(t=>numericColumns(t).length);
+  const cur=S.slides[S.cursor]||{};
+  return `你是簡報資料視覺化編輯。請替現有簡報新增一頁圖表，但不要改寫、刪除或重新排列原本的大綱頁面。
+
+[目前簡報脈絡]
+主題：${S.topic||'未命名簡報'}
+目前頁面：${cur.title||'無'}
+核心結論：${cur.kicker||'無'}
+
+[可用資料表]
+${JSON.stringify(tables.map(chartTableInfo),null,2)}
+
+請只輸出一個 JSON 物件：
+{"tableId":"從上面選一個 id","type":"column|bar|line|doughnut","categoryColumn":"分類欄名稱","valueColumns":["數值欄名稱，最多兩欄；doughnut 只能一欄"],"sort":"source|desc","limit":8,"title":"圖表頁標題，20字內","kicker":"只根據已提供數值寫一句結論，24字內","note":"講稿一句，30字內"}
+
+選圖原則：時間序列用 line、項目比較用 column、名稱較長或排名用 bar、單一系列占比用 doughnut。不要自行產生或修改任何數值。只輸出 JSON。`;
+}
+function resolveColumn(table,value,fallback){
+  if(Number.isInteger(value) && value>=0 && value<table.headers.length) return value;
+  const i=(table.headers||[]).findIndex(h=>String(h).trim()===String(value||'').trim());
+  return i>=0?i:fallback;
+}
+function quickChartSpec(){
+  const table=(S.tables||[]).find(t=>numericColumns(t).length);
+  if(!table) throw new Error('找不到可以畫圖的數值欄。請上傳含有標題列與數值欄的 Excel 或 CSV。');
+  const col=numericColumns(table)[0];
+  return {tableId:table.id,type:'bar',categoryColumn:table.headers[0],valueColumns:[col.name],sort:'desc',limit:8,
+    title:col.name+'比較',kicker:'資料由本機讀取，數值可在 PowerPoint 編輯',note:'說明最高與最低項目，以及這對決策的意義。'};
+}
+function chartSlideFromSpec(spec){
+  spec=spec||{};
+  const table=(S.tables||[]).find(t=>t.id===spec.tableId||t.title===spec.tableId) ||
+    (S.tables||[]).find(t=>numericColumns(t).length);
+  if(!table) throw new Error('AI 指定的資料表不存在，請重新選擇或重新上傳資料。');
+  const numeric=numericColumns(table);
+  if(!numeric.length) throw new Error('這份資料表沒有足夠的數值可畫圖。');
+  const categoryIndex=resolveColumn(table,spec.categoryColumn,0);
+  let valueIndices=(Array.isArray(spec.valueColumns)?spec.valueColumns:[])
+    .map(v=>resolveColumn(table,v,-1)).filter(i=>numeric.some(n=>n.index===i));
+  if(!valueIndices.length) valueIndices=[numeric[0].index];
+  const type=['column','bar','line','doughnut'].includes(spec.type)?spec.type:'column';
+  if(type==='doughnut') valueIndices=valueIndices.slice(0,1); else valueIndices=valueIndices.slice(0,2);
+  let rows=(table.rows||[]).map(r=>({label:String(r[categoryIndex]||'').trim(),
+    values:valueIndices.map(i=>chartNum(r[i]))})).filter(r=>r.label&&r.values.some(v=>v!==null));
+  if(rows.length>3) rows=rows.filter(r=>!/(總計|合計|total)/i.test(r.label));
+  if(spec.sort==='desc' || (spec.sort!=='source'&&type!=='line')) rows.sort((a,b)=>(b.values[0]||0)-(a.values[0]||0));
+  const limit=Math.max(3,Math.min(10,Number(spec.limit)||8)); rows=rows.slice(0,limit);
+  if(rows.length<2) throw new Error('可用的圖表資料少於兩筆。');
+  const labels=rows.map(r=>r.label);
+  const series=valueIndices.map((column,si)=>({name:table.headers[column]||('數值 '+(si+1)),
+    values:rows.map(r=>r.values[si]===null?0:r.values[si])}));
+  return normalize({layout:'chart',title:spec.title||series[0].name+'比較',kicker:spec.kicker||'',
+    chart:{type,labels,series,source:table.title,category:table.headers[categoryIndex]},
+    note:spec.note||('圖表資料來源：'+table.title)});
+}
+function insertChartSlide(spec){
+  const slide=chartSlideFromSpec(spec); slide.status='generated';
+  S.slides.splice(Math.min(S.cursor+1,S.slides.length),0,slide); S.cursor=Math.min(S.cursor+1,S.slides.length-1);
+  S.modal=null; S.tab='outline'; saveDraft(); done();
+}
+async function suggestChart(){
+  if(!(S.tables||[]).some(t=>numericColumns(t).length)) return fail('請先上傳含數值欄的 Excel 或 CSV。');
+  toast('AI 正在選擇圖表');
+  try{
+    const sys='你是簡報資料視覺化編輯。只輸出單一 JSON 物件，不要 markdown 圍籬或說明。';
+    insertChartSlide(parseJSON(await ask(sys,buildChartPrompt())));
+  }catch(e){ fail(e.message); }
+}
+function importChartSpec(){
+  const el=document.getElementById('chartPaste'), raw=el?el.value:'';
+  if(!raw.trim()) return fail('請先貼上 AI 回覆的圖表 JSON。');
+  try{ insertChartSlide(parseJSON(raw)); }catch(e){ fail(e.message); }
 }
 
 /* ---------- 用自己習慣的 AI 工具：產生指令 → 貼回結果 ---------- */
@@ -1094,7 +1277,7 @@ function normalize(x){
     id:uid(), layout: LAYOUTS[x.layout]?x.layout:'bullets',
     title:x.title||'未命名', subtitle:x.subtitle||'', kicker:x.kicker||'',
     bullets: Array.isArray(x.bullets)? x.bullets.map(b=> typeof b==='string'?{h:b,d:''}:{h:b.h||'',d:b.d||''}) : [],
-    columns:x.columns||null, stat:x.stat||null, quote:x.quote||null,
+    columns:x.columns||null, stat:x.stat||null, chart:x.chart||null, quote:x.quote||null,
     note:x.note||'', footer:(S.topic||'').slice(0,24), status:'draft', history:[]
   };
 }
@@ -1256,6 +1439,8 @@ function exportOutline(){
     (s.bullets||[]).forEach(b=>L.push('- **'+b.h+'**'+(b.d?'　'+b.d:'')));
     (s.columns||[]).forEach(c=>{ L.push('','**'+c.h+'**'); (c.items||[]).forEach(it=>L.push('- '+it)); });
     if(s.stat) L.push('','> '+s.stat.value+' — '+s.stat.label);
+    if(s.chart) L.push('','圖表：'+({column:'柱狀圖',bar:'橫條圖',line:'折線圖',doughnut:'圓環圖'}[s.chart.type]||s.chart.type)+
+      '｜'+(s.chart.series||[]).map(one=>one.name).join('、')+'｜資料來源：'+(s.chart.source||''));
     if(s.quote) L.push('','> '+s.quote.text+'　—— '+(s.quote.by||''));
     if(s.note) L.push('','講稿：'+s.note);
     return L.join('\n');
@@ -1265,8 +1450,8 @@ function exportOutline(){
 
 function exportProject(){
   download((S.topic||'簡報').slice(0,20)+'.slideforge.json',
-    JSON.stringify({v:1,topic:S.topic,audience:S.audience,tone:S.tone,styleId:S.styleId,style:curStyle(),
-      slides:S.slides,materials:S.materials},null,2),'application/json');
+    JSON.stringify({v:2,topic:S.topic,audience:S.audience,tone:S.tone,styleId:S.styleId,style:curStyle(),
+      slides:S.slides,materials:S.materials,tables:S.tables},null,2),'application/json');
 }
 
 async function importProject(file){
@@ -1275,6 +1460,7 @@ async function importProject(file){
     if(!Array.isArray(d.slides)) throw new Error('這不是 Slide Forge 專案檔');
     S.topic=d.topic||''; S.audience=d.audience||S.audience; S.tone=d.tone||S.tone;
     S.materials=Array.isArray(d.materials)?d.materials:[];
+    S.tables=Array.isArray(d.tables)?d.tables:[];
     if(d.style && !S.styles.some(s=>s.id===d.style.id)){ S.styles=S.styles.concat([d.style]); saveCustom(); S.styleId=d.style.id; }
     else if(d.styleId) S.styleId=d.styleId;
     S.slides=d.slides.map(s=>Object.assign({},s,{id:s.id||uid(),history:[]}));
@@ -1314,6 +1500,24 @@ async function exportPPTX(){
         sl.addText(s.title||'重點數據',{x:M,y:1.9,w:W,h:.4,fontSize:12,color:hx(st.accent),fontFace:'Consolas',charSpacing:2});
         sl.addText(String((s.stat&&s.stat.value)||'—'),{x:M,y:2.3,w:W,h:2,fontSize:96,bold:true,color:hx(st.accent),fontFace:FD});
         sl.addText((s.stat&&s.stat.label)||'',{x:M,y:4.5,w:W*.75,h:.9,fontSize:20,color:hx(st.ink),fontFace:FB});
+        foot();
+      }else if(s.layout==='chart' && s.chart){
+        kick();
+        sl.addText(s.title||'資料圖表',{x:M,y:.75+ky,w:W,h:.65,fontSize:28,bold:true,color:hx(st.ink),fontFace:FD,valign:'top'});
+        const type=s.chart.type||'column', labels=(s.chart.labels||[]).slice(0,10);
+        const data=(s.chart.series||[]).slice(0,type==='doughnut'?1:2).map(one=>({
+          name:one.name||'數值',labels,values:(one.values||[]).slice(0,labels.length).map(v=>Number(v)||0)
+        }));
+        const chartType=type==='line'?pptx.ChartType.line:type==='doughnut'?pptx.ChartType.doughnut:pptx.ChartType.bar;
+        sl.addChart(chartType,data,{x:M,y:1.58+ky,w:W,h:4.75-ky,
+          barDir:type==='bar'?'bar':'col',showTitle:false,showLegend:data.length>1,legendPos:'b',
+          chartColors:[hx(st.accent),hx(st.accent2),hx(mix(st.accent,st.ink,.42)),hx(mix(st.accent2,st.ink,.42))],
+          showValue:type==='doughnut',showLabel:type==='doughnut',showPercent:type==='doughnut',holeSize:62,
+          showCatName:false,showBorder:false,showGridLines:type!=='doughnut',
+          catAxisLabelFontFace:FB,valAxisLabelFontFace:FB,catAxisLabelColor:hx(st.sub),valAxisLabelColor:hx(st.sub),
+          catAxisLineColor:hx(st.rule),valAxisLineColor:hx(st.rule),showCatAxis:type!=='doughnut',showValAxis:type!=='doughnut',
+          lineSize:type==='line'?3:1,dataLabelColor:hx(st.ink),dataLabelFontFace:FB,dataLabelFontSize:11});
+        sl.addText('資料來源：'+(s.chart.source||'使用者上傳資料'),{x:M,y:6.42,w:8,h:.22,fontSize:8,color:hx(st.sub),fontFace:FB});
         foot();
       }else if(s.layout==='quote'){
         kick();
@@ -1453,6 +1657,7 @@ function materialBox(){
     `<div style="display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:5px;padding:6px 9px;font-size:11.5px">
       <span class="mono" style="color:var(--cy);font-size:10px">DOC</span>
       <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.name)}</span>
+      ${(m.tableIds||[]).length?`<span class="mono" style="color:var(--mark);font-size:10px">${m.tableIds.length} 表</span>`:''}
       <span class="mono" style="color:var(--mute);font-size:10px">${m.text.length}字</span>
       <button class="del" data-act="delMat" data-id="${m.id}" style="background:none;border:none;color:var(--mute);cursor:pointer">×</button>
     </div>`).join('')}</div>`:''}`;
@@ -1581,6 +1786,12 @@ function viewEditor(){
         : `<div style="border:1px solid var(--line);border-radius:6px;padding:10px;font-size:11.5px;color:var(--mute);line-height:1.6">
             要用這個得先在設定填一組金鑰，Gemini 有免費額度。不填也沒關係，直接點文字改就好。
             <button class="btn sm" data-act="settings" style="margin-top:8px">前往設定</button></div>`}
+      ${((S.tables||[]).some(t=>numericColumns(t).length)||/\|[^\n]+\|/.test(S.brief||''))?`<div style="border-top:1px solid var(--line);margin-top:20px;padding-top:18px">
+        <div class="lbl">AI 資料圖表</div>
+        <button class="btn full" data-act="chartAi">＋ 在本頁後加入圖表</button>
+        <div class="hint">AI 只選圖表與欄位；數值由本機從 Excel／CSV 讀取，不會叫 AI 自己計算。</div>
+        ${cur.layout==='chart'?`<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:10px">${[['column','柱狀'],['bar','橫條'],['line','折線'],['doughnut','圓環']].map(([k,v])=>`<button class="chip ${cur.chart&&cur.chart.type===k?'on':''}" data-act="chartType" data-k="${k}">${v}</button>`).join('')}</div>`:''}
+      </div>`:''}
       <div class="lbl" style="margin-top:22px">全篇大綱</div>
       ${S.slides.map((s,i)=>`<button data-act="go" data-i="${i}" style="display:block;width:100%;text-align:left;background:${i===S.cursor?'var(--line)':'transparent'};border:none;border-left:2px solid ${i===S.cursor?'var(--mark)':'var(--line)'};padding:7px 10px;cursor:pointer;color:var(--paper);font-size:12.5px;margin-bottom:2px;line-height:1.45">
         <span class="mono" style="color:var(--mute);margin-right:7px">${String(i+1).padStart(2,'0')}</span>${esc(s.title)}</button>`).join('')}`;
@@ -1619,7 +1830,7 @@ function viewEditor(){
       </div>
       <div style="width:100%;max-width:880px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <span class="mono" style="font-size:11px;color:var(--mute)">版型</span>
-        ${Object.keys(LAYOUTS).map(k=>`<button class="chip ${cur&&cur.layout===k?'on':''}" data-act="layout" data-k="${k}">${LAYOUTS[k]}</button>`).join('')}
+        ${Object.keys(LAYOUTS).filter(k=>k!=='chart').map(k=>`<button class="chip ${cur&&cur.layout===k?'on':''}" data-act="layout" data-k="${k}">${LAYOUTS[k]}</button>`).join('')}
         <span style="flex:1"></span>
         <button class="btn sm" data-act="undo" ${cur&&(cur.history||[]).length?'':'disabled'}>復原</button>
       </div>
@@ -1663,6 +1874,27 @@ function viewOwnAI(){
       <button class="btn pri full" data-act="importPasted">轉成簡報</button>
     </div>
     <div class="hint">認得 # 標題、&gt; 核心結論、- 條列這種寫法，粗體標題或編號清單也可以。</div>
+  </div></div>`;
+}
+
+function viewChartAI(){
+  const p=buildChartPrompt(), ready=aiReady();
+  return `<div class="modal" data-act="closeModal"><div class="box" data-stop="1" style="width:min(760px,100%)">
+    <div style="display:flex;align-items:center;margin-bottom:6px"><div style="font-size:17px;font-weight:700">AI 圖表助手</div><span style="flex:1"></span>
+      <button data-act="closeModal" style="background:none;border:none;color:var(--mute);font-size:20px;cursor:pointer">×</button></div>
+    <div style="border:1px solid var(--line);border-radius:8px;padding:12px;margin:12px 0 18px;font-size:12.5px;line-height:1.65;color:var(--mute)">
+      AI 只負責選擇資料表、欄位、圖表類型與標題；實際數值由本機讀取並繪圖，不會採用 AI 自行計算的數字。新圖表會插在目前頁面的後面，原本大綱不會被改動。</div>
+    ${ready?`<button class="btn pri full" data-act="chartSuggest" ${S.busy?'disabled':''}>讓 ${esc(modelLabel())} 建議並加入圖表</button>
+      <div class="hint" style="margin:8px 0 18px">也可以使用下面的複製貼回方式。</div>`:''}
+    <details ${ready?'':'open'}><summary style="cursor:pointer;font-size:13px;font-weight:600;margin-bottom:10px">用自己的 ChatGPT／Gemini／Claude</summary>
+      <div class="lbl">一、複製圖表任務</div>
+      <textarea id="promptOut" readonly style="min-height:150px;font-size:12px;line-height:1.55">${esc(p)}</textarea>
+      <button class="btn sm" data-act="copyPrompt" style="margin:8px 0 16px">複製指令</button>
+      <div class="lbl">二、貼回 AI 產生的 JSON</div>
+      <textarea id="chartPaste" placeholder='{"tableId":"...","type":"bar",...}' style="min-height:110px;font-size:12px;line-height:1.55"></textarea>
+      <button class="btn pri full" data-act="importChartSpec" style="margin-top:10px">加入可編輯圖表頁</button>
+    </details>
+    <button class="btn full" data-act="chartQuick" style="margin-top:12px">不用 AI，直接用第一個數值欄建立橫條圖</button>
   </div></div>`;
 }
 
@@ -1972,6 +2204,7 @@ function render(){
   document.getElementById('layer').innerHTML =
     (S.modal==='settings'?viewSettings():'') +
     (S.modal==='ownai'?viewOwnAI():'') +
+    (S.modal==='chartAi'?viewChartAI():'') +
     (S.busy?`<div class="toast"><span class="dot"></span>${esc(S.busy)}…</div>`:'') +
     (S.err?`<div class="toast bad"><span>${esc(S.err)}</span><button data-act="clearErr" style="background:none;border:none;color:var(--mute);cursor:pointer;font-size:16px">×</button></div>`:'');
   fitAll();
@@ -2018,8 +2251,8 @@ document.addEventListener('click', async e=>{
       S.plan = sc.outline||'';
       render();
     },
-    resetMat:()=>{ S.brief=(SCENARIOS[S.scenario]||{}).material||''; S.uploads=[]; render(); },
-    clearMat:()=>{ S.brief=''; S.uploads=[]; saveDraft(); render(); },
+    resetMat:()=>{ S.brief=(SCENARIOS[S.scenario]||{}).material||''; S.uploads=[]; S.tables=[]; render(); },
+    clearMat:()=>{ S.brief=''; S.uploads=[]; S.tables=[]; saveDraft(); render(); },
     delUpload:()=>{
       const u=(S.uploads||[]).find(x=>x.id===id); if(!u) return;
       const cur=document.getElementById('wMat'); if(cur) S.brief=cur.value;
@@ -2028,6 +2261,8 @@ document.addEventListener('click', async e=>{
       }else{
         fail('這個檔案的內容已經被你改過，沒辦法自動抓出來，請直接在下面的框裡刪掉。');
       }
+      const ids=new Set(u.tableIds||[]);
+      S.tables=(S.tables||[]).filter(table=>!ids.has(table.id));
       S.uploads=S.uploads.filter(x=>x.id!==u.id); saveDraft(); render();
     },
     upMatW:()=>pickFile(ACCEPT, f=>handleUpload(f)),
@@ -2041,6 +2276,13 @@ document.addEventListener('click', async e=>{
     wizard:()=>{ S.wizard=true; S.view='home'; S.step=1; LS.set('wizardDone',false); render(); },
     brief:()=>{ readHome(); genFromBrief(); },
     ownai:()=>{ syncStep(); readHome(); S.modal='ownai'; render(); },
+    chartAi:()=>{ ensureBriefTables();
+      if(!(S.tables||[]).some(one=>numericColumns(one).length)) return fail('請先上傳 Excel／CSV，或在素材中貼上以 | 分隔的資料表。');
+      S.modal='chartAi'; render(); },
+    chartSuggest:()=>suggestChart(),
+    importChartSpec:()=>importChartSpec(),
+    chartQuick:()=>{ try{ insertChartSlide(quickChartSpec()); }catch(err){ fail(err.message); } },
+    chartType:()=>{ const s=S.slides[S.cursor]; if(s&&s.chart){ pushHistory(S.cursor); s.chart.type=t.dataset.k; s.status='edited'; saveDraft(); render(); } },
     copyPrompt:()=>{
       const el=document.getElementById('promptOut'); if(!el) return;
       const say=m=>{ t.textContent=m; setTimeout(()=>{ if(t) t.textContent='複製指令'; },1800); };
@@ -2113,9 +2355,12 @@ document.addEventListener('click', async e=>{
     addMat:()=>{ const el=document.getElementById('matDraft'); if(el&&el.value.trim()){ S.materials.push({id:uid(),name:'貼上的文字 '+(S.materials.length+1),text:el.value.trim()}); saveDraft(); render(); } },
     upMat:()=>pickFile(ACCEPT, async f=>{
       toast('讀取 '+f.name);
-      try{ const text=await parseUpload(f); S.materials.push({id:uid(),name:f.name,text}); saveDraft(); done(); }
+      try{ const parsed=await parseUpload(f), text=parsed.text;
+        S.materials.push({id:uid(),name:f.name,text,tableIds:(parsed.tables||[]).map(t=>t.id)});
+        S.tables=(S.tables||[]).concat(parsed.tables||[]); saveDraft(); done(); }
       catch(e){ fail(e.message); } }),
-    delMat:()=>{ S.materials=S.materials.filter(m=>m.id!==id); saveDraft(); render(); },
+    delMat:()=>{ const m=S.materials.find(one=>one.id===id), ids=new Set((m&&m.tableIds)||[]);
+      S.materials=S.materials.filter(m=>m.id!==id); S.tables=(S.tables||[]).filter(t=>!ids.has(t.id)); saveDraft(); render(); },
     pptx:()=>exportPPTX(), html:()=>exportHTML(), md:()=>exportOutline(),
     expProj:()=>exportProject(), impProj:()=>pickFile('.json',importProject),
     saveCfg:()=>{
