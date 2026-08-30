@@ -1,0 +1,2121 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Slide Forge｜簡報產生器</title>
+<meta name="description" content="以大綱與風格庫驅動的簡報生成工具。內容結構化生成，版面本地渲染，文字全程可編輯。自備 API 金鑰，資料留在自己的瀏覽器。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600;700&family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0D1016; --panel:#141821; --line:#252B37; --paper:#E9EDF3;
+  --mute:#7A8496; --mark:#FF3D7F; --cy:#00C9C0; --warn:#FFB020;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; background:var(--ink); color:var(--paper);
+  font-family:'IBM Plex Sans','Noto Sans TC',system-ui,-apple-system,sans-serif;
+  -webkit-font-smoothing:antialiased; overflow:hidden;
+}
+#app{height:100%;display:flex;flex-direction:column}
+.mono{font-family:'IBM Plex Mono',monospace}
+button{font-family:inherit}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-thumb{background:#2A3140;border-radius:5px}
+::-webkit-scrollbar-track{background:transparent}
+:focus-visible{outline:2px solid var(--cy);outline-offset:2px}
+
+.btn{font-size:13px;font-weight:600;padding:9px 15px;border-radius:6px;cursor:pointer;
+  border:1px solid var(--line);background:transparent;color:var(--mute);letter-spacing:.2px;white-space:nowrap;
+  transition:background .15s,border-color .15s,color .15s}
+.btn:hover:not(:disabled){color:var(--paper);border-color:#39414f}
+.btn.pri{background:var(--mark);color:#fff;border-color:var(--mark)}
+.btn.pri:hover:not(:disabled){filter:brightness(1.1);color:#fff}
+.btn.sm{font-size:12px;padding:6px 10px}
+.btn.xs{font-size:10px;padding:3px 0;flex:1;border-radius:3px}
+.btn.full{width:100%}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+
+.lbl{font-size:11px;letter-spacing:1.4px;text-transform:uppercase;color:var(--mute);margin-bottom:7px;
+  font-family:'IBM Plex Mono',monospace}
+.hint{font-size:11px;color:var(--mute);margin-top:6px;line-height:1.55}
+.field{margin-bottom:16px}
+input[type=text],input[type=password],input[type=number],textarea,select{
+  width:100%;background:var(--ink);border:1px solid var(--line);border-radius:6px;padding:10px 12px;
+  color:var(--paper);font-size:14px;font-family:inherit;outline:none}
+textarea{resize:vertical;line-height:1.6}
+input:focus,textarea:focus,select:focus{border-color:var(--mark)}
+input[type=range]{width:100%;accent-color:var(--mark)}
+
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:26px}
+.scroll{overflow-y:auto;min-height:0}
+
+.sw{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:8px;padding:10px;background:transparent}
+.sw.on{border-color:var(--mark);background:var(--line)}
+.sw .pick{display:flex;gap:8px;align-items:center;flex:1;min-width:0;background:none;border:none;padding:0;cursor:pointer;text-align:left}
+.sw .nm{font-size:13px;font-weight:600;color:var(--paper)}
+.sw .ds{font-size:11px;color:var(--mute);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sw .del{background:none;border:none;color:var(--mute);cursor:pointer;font-size:15px;line-height:1;padding:0 2px}
+.chip{border:1px solid var(--line);background:transparent;color:var(--mute);font-size:11px;padding:5px 9px;border-radius:4px;cursor:pointer}
+.chip.on{background:var(--mark);border-color:var(--mark);color:#fff}
+
+.frame{width:100%;aspect-ratio:16/9;position:relative;overflow:hidden}
+.stage{width:1280px;height:720px;position:absolute;top:0;left:0;transform-origin:top left}
+[data-edit]{outline:none}
+[contenteditable=true]{cursor:text}
+[contenteditable=true]:hover{box-shadow:inset 0 0 0 1px rgba(255,61,127,.35)}
+[contenteditable=true]:focus{box-shadow:inset 0 0 0 1px var(--mark)}
+
+.toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:var(--panel);
+  border:1px solid var(--mark);border-radius:8px;padding:10px 18px;font-size:13px;display:flex;gap:10px;
+  align-items:center;z-index:80;max-width:min(560px,92vw);line-height:1.5}
+.toast.bad{background:#2A1520}
+.dot{width:7px;height:7px;border-radius:4px;background:var(--mark);flex:0 0 auto;animation:p 1s ease-in-out infinite}
+@keyframes p{50%{opacity:.25}}
+.modal{position:fixed;inset:0;background:rgba(5,7,11,.78);z-index:90;display:flex;align-items:center;
+  justify-content:center;padding:20px}
+.modal .box{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:24px;
+  width:min(520px,100%);max-height:88vh;overflow-y:auto}
+
+#present{position:fixed;inset:0;background:#000;z-index:100;display:none;align-items:center;justify-content:center}
+#present.on{display:flex}
+#presentWrap{transform-origin:center center}
+#presentHud{position:fixed;bottom:14px;right:18px;color:#66707f;font:12px/1 'IBM Plex Mono',monospace;letter-spacing:1px}
+
+@media (max-width:900px){
+  .home-grid{grid-template-columns:1fr!important}
+  #rail,#insp{display:none}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="present"><div id="presentWrap"></div><div id="presentHud"></div></div>
+<div id="layer"></div>
+
+<script>
+/* ============================================================================
+   SLIDE FORGE — 單檔部署版
+   資料全部留在使用者自己的瀏覽器，金鑰只放 localStorage，不會傳給任何第三方。
+   ========================================================================== */
+
+/* ---------- 常數 ---------- */
+const PRESETS = [
+  {id:'blueprint',name:'藍圖',desc:'工程製圖感，深藍底細線網格',bg:'#0E2233',surface:'#143047',ink:'#EAF4FA',sub:'#7FA8C4',accent:'#3FD2C7',accent2:'#F5A524',rule:'#255273',grid:true,radius:2,serif:false,prompt:'語氣精準、工程導向，要點用名詞短語，避免形容詞堆疊。'},
+  {id:'proof',name:'印刷樣張',desc:'紙白底、黑墨、洋紅標記',bg:'#F4F2ED',surface:'#FFFFFF',ink:'#16181C',sub:'#6B7078',accent:'#E5197E',accent2:'#111318',rule:'#D5D1C8',grid:false,radius:0,serif:false,prompt:'語氣中性專業，像內部技術文件，句子短，不用行銷語言。'},
+  {id:'midnight',name:'深夜霓虹',desc:'近黑底，青與洋紅高對比',bg:'#0B0B0F',surface:'#15151C',ink:'#F2F2F5',sub:'#8A8A99',accent:'#00E5C0',accent2:'#FF3D7F',rule:'#26262F',grid:false,radius:10,serif:false,prompt:'語氣有節奏感，標題短而有力，適合技術分享場合。'},
+  {id:'field',name:'田野筆記',desc:'米白底、墨綠字，學術調性',bg:'#F2F1E9',surface:'#FBFAF5',ink:'#1E2B21',sub:'#5E6E62',accent:'#3F7D5B',accent2:'#B4652A',rule:'#D8D6C6',grid:false,radius:4,serif:true,prompt:'語氣沉穩，重視論證與資料來源，要點具體。'},
+  {id:'bold',name:'巨型字體',desc:'白底黑字，黃色塊當重心',bg:'#FFFFFF',surface:'#FAFAFA',ink:'#0A0A0A',sub:'#5A5A5A',accent:'#FFD400',accent2:'#0A0A0A',rule:'#E4E4E4',grid:false,radius:0,serif:false,prompt:'語氣直接，每頁只講一件事，要點極短，最多八個字。'},
+  {id:'sunrise',name:'晨光',desc:'漸暖底色，橘紅重點',bg:'#FFF6EE',surface:'#FFFFFF',ink:'#2A1D16',sub:'#7A6255',accent:'#E8622B',accent2:'#2F7D8C',rule:'#EBD9C9',grid:false,radius:8,serif:false,prompt:'語氣溫和好懂，適合對非技術聽眾說明。'}
+];
+const LAYOUTS = {cover:'封面',agenda:'目錄',bullets:'條列',twoCol:'雙欄對照',stat:'數據重點',quote:'引言',closing:'結尾'};
+/* ============================================================
+   課程主辦方請把這一行改成你的 Worker 網址，學員就不用自備金鑰。
+   例：const COURSE_ENDPOINT = 'https://slideforge.你的帳號.workers.dev';
+   留空的話，平台會退回「自備金鑰」與「用自己的 AI 工具」兩種模式。
+   ============================================================ */
+const COURSE_ENDPOINT = '';
+const COURSE_MODELS = [
+  {key:'gemini', label:'Gemini Flash'},
+  {key:'geminiLite', label:'Gemini Flash-Lite'},
+  {key:'claude', label:'Claude Sonnet'},
+  {key:'claudeFast', label:'Claude Haiku'},
+  {key:'gpt', label:'GPT'}
+];
+
+const PROVIDERS = {
+  course:{label:'課程模式（不用自己準備金鑰）', proto:'proxy', free:'主辦方提供', vision:true,
+    base:COURSE_ENDPOINT, model:'gemini', models:COURSE_MODELS.map(m=>m.key), keyUrl:'', rpm:0,
+    note:'由課程主辦方統一提供模型額度，你只要填通行碼就能用。想換模型直接在上面選。'},
+  gemini:{label:'Google Gemini', proto:'gemini', free:'免費額度', vision:true,
+    base:'https://generativelanguage.googleapis.com', model:'gemini-2.5-flash-lite',
+    models:['gemini-2.5-flash-lite','gemini-2.5-flash','gemini-2.5-pro'],
+    keyUrl:'https://aistudio.google.com/apikey', rpm:10,
+    note:'申請金鑰不用信用卡。Flash-Lite 的每日次數最寬鬆，Flash 次之，Pro 在免費額度下幾乎只夠試用。Google 會調整額度，實際數字以官方頁面為準。'},
+  openrouter:{label:'OpenRouter 免費模型', proto:'openai', free:'免費額度', vision:false,
+    base:'https://openrouter.ai/api/v1', model:'openrouter/free',
+    models:['openrouter/free'],
+    keyUrl:'https://openrouter.ai/keys', rpm:20,
+    note:'免費模型的 ID 結尾是 :free，名單會不定期輪動。填 openrouter/free 讓它自動挑一個還活著的。免費帳號大約每分鐘 20 次、每天 50 次。'},
+  ollama:{label:'本機 Ollama', proto:'openai', free:'完全免費', vision:false,
+    base:'http://localhost:11434/v1', model:'qwen3:8b',
+    models:['qwen3:8b','llama3.1:8b','gemma3:12b'],
+    keyUrl:'https://ollama.com/download', rpm:0,
+    note:'模型跑在自己電腦上，沒有次數限制，資料也不外傳。需要先讓 Ollama 允許瀏覽器呼叫（設定 OLLAMA_ORIGINS=*），而且這個頁面最好也從本機開啟。金鑰欄位隨便填一個字即可。'},
+  openai:{label:'其他 OpenAI 相容端點', proto:'openai', free:'', vision:true,
+    base:'https://api.groq.com/openai/v1', model:'',
+    models:[], keyUrl:'', rpm:0,
+    note:'任何 OpenAI 相容服務都可以填在這裡，前提是它允許瀏覽器直接呼叫（CORS）。官方 api.openai.com 通常會被擋。'},
+  anthropic:{label:'Anthropic', proto:'anthropic', free:'', vision:true,
+    base:'https://api.anthropic.com', model:'claude-sonnet-4-5',
+    models:['claude-sonnet-4-5','claude-haiku-4-5'],
+    keyUrl:'https://console.anthropic.com/settings/keys', rpm:0,
+    note:'品質最好，但沒有免費方案，claude.ai 的訂閱也不能用在 API 上。'}
+};
+const SERIF = "'Noto Serif TC',Georgia,serif";
+const SANS  = "'IBM Plex Sans','Noto Sans TC',system-ui,sans-serif";
+
+/* ---------- 狀態與儲存 ---------- */
+const LS = {
+  get(k,d){ try{ const v=localStorage.getItem('sf:'+k); return v===null?d:JSON.parse(v);}catch(e){return d} },
+  set(k,v){ try{ localStorage.setItem('sf:'+k,JSON.stringify(v)); }catch(e){} },
+  del(k){ try{ localStorage.removeItem('sf:'+k);}catch(e){} }
+};
+const uid = ()=>Math.random().toString(36).slice(2,9);
+
+let S = {
+  view:'home', tab:'outline', cursor:0, busy:null, err:null, modal:null,
+  topic:'', audience:'', tone:'', pages:0, instruction:'', brief:'', adv:false, rulesOpen:false,
+  rules: LS.get('rules',null),
+  wizard: LS.get('wizardDone',false)?false:true, step:1, scenario:null, md:'', plan:'', uploads:[],
+  styleId: LS.get('styleId','blueprint'),
+  styles: PRESETS.concat(LS.get('customStyles',[])),
+  materials: [], slides: [],
+  economy: LS.get('economy',true),
+  cfg: Object.assign(
+    COURSE_ENDPOINT
+      ? {provider:'course',base:COURSE_ENDPOINT,model:'gemini',key:'',maxTokens:6000,gapMs:1500}
+      : {provider:'gemini',base:PROVIDERS.gemini.base,model:PROVIDERS.gemini.model,key:'',maxTokens:6000,gapMs:7000},
+    LS.get('cfg',{}))
+};
+
+/* 用量計數：讓人知道今天還剩多少免費額度 */
+function today(){ return new Date().toISOString().slice(0,10); }
+function usage(){
+  const u = LS.get('usage',{d:today(),n:0});
+  if(u.d!==today()){ u.d=today(); u.n=0; LS.set('usage',u); }
+  return u;
+}
+function bumpUsage(){ const u=usage(); u.n++; LS.set('usage',u); return u.n; }
+const draft = LS.get('draft',null);
+if(draft){
+  Object.assign(S,{topic:draft.topic||'',audience:draft.audience||S.audience,tone:draft.tone||S.tone,
+    materials:draft.materials||[],slides:draft.slides||[],styleId:draft.styleId||S.styleId,
+    brief:draft.brief||'',md:draft.md||'',scenario:draft.scenario||null,plan:draft.plan||'',
+    uploads:draft.uploads||[],step:Math.min(5,Math.max(1,draft.step||1))});
+  if(S.slides.length) S.wizard=false;
+}
+const curStyle = ()=> S.styles.find(s=>s.id===S.styleId) || S.styles[0];
+const saveCustom = ()=> LS.set('customStyles', S.styles.filter(s=>!PRESETS.some(p=>p.id===s.id)));
+const saveDraft = ()=> LS.set('draft',{topic:S.topic,audience:S.audience,tone:S.tone,styleId:S.styleId,
+  slides:S.slides,materials:S.materials,brief:S.brief,md:S.md,step:S.step,scenario:S.scenario,plan:S.plan,uploads:S.uploads});
+function aiReady(){ return S.cfg.provider==='ollama' ? true : !!S.cfg.key; }
+
+function set(patch,skipRender){ Object.assign(S,patch); if(!skipRender) render(); }
+function toast(msg){ S.busy=msg; render(); }
+function fail(msg){ S.busy=null; S.err=msg; render(); }
+function done(){ S.busy=null; render(); }
+
+/* ---------- 模型呼叫層（三種供應商） ---------- */
+let lastCall = 0;
+const sleep = ms => new Promise(r=>setTimeout(r,ms));
+
+/* 免費額度通常卡在「每分鐘幾次」，所以呼叫之間強制留間隔 */
+async function throttle(){
+  const gap = Number(S.cfg.gapMs)||0;
+  if(!gap) return;
+  const wait = lastCall + gap - Date.now();
+  if(wait>0){
+    for(let left=Math.ceil(wait/1000); left>0; left--){
+      if(S.busy) toast(String(S.busy).replace(/（.*?）$/,'')+'（等 '+left+' 秒，避開免費額度上限）');
+      await sleep(1000);
+    }
+  }
+  lastCall = Date.now();
+}
+
+async function ask(system, text, img){
+  let lastErr;
+  for(let attempt=0; attempt<3; attempt++){
+    await throttle();
+    try{ const out = await askOnce(system,text,img); bumpUsage(); return out; }
+    catch(e){
+      lastErr = e;
+      if(!e.retryable || attempt===2) throw e;
+      const wait = 20*(attempt+1);
+      for(let left=wait; left>0; left--){
+        toast('額度滿了，'+left+' 秒後再試一次');
+        await sleep(1000);
+      }
+    }
+  }
+  throw lastErr;
+}
+
+async function askOnce(system, text, img){
+  const c = S.cfg;
+  const proto = (PROVIDERS[c.provider]||{}).proto || 'openai';
+  if(!c.key && c.provider!=='ollama' && proto!=='proxy') throw new Error('還沒設定 API 金鑰，請點右上角「設定」。');
+  const mt = Number(c.maxTokens)||2000;
+  let url, headers, body, pick;
+
+  if(proto==='proxy'){
+    if(!c.base) throw new Error('課程模式尚未設定伺服器網址，請聯絡主辦方，或到設定改用其他方式。');
+    url = c.base.replace(/\/$/,'');
+    headers = {'content-type':'application/json','x-course-code':c.key||''};
+    body = {model:c.model, system, text, maxTokens:mt, image:img||null};
+    pick = d => d.text||'';
+
+  }else if(proto==='anthropic'){
+    url = c.base.replace(/\/$/,'')+'/v1/messages';
+    headers = {'content-type':'application/json','x-api-key':c.key,
+      'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'};
+    const content = img
+      ? [{type:'image',source:{type:'base64',media_type:img.media,data:img.b64}},{type:'text',text}]
+      : text;
+    body = {model:c.model,max_tokens:mt,system,messages:[{role:'user',content}]};
+    pick = d => (d.content||[]).filter(x=>x.type==='text').map(x=>x.text).join('\n');
+
+  }else if(proto==='openai'){
+    url = c.base.replace(/\/$/,'')+'/chat/completions';
+    headers = {'content-type':'application/json','authorization':'Bearer '+(c.key||'ollama')};
+    const content = img
+      ? [{type:'text',text},{type:'image_url',image_url:{url:'data:'+img.media+';base64,'+img.b64}}]
+      : text;
+    body = {model:c.model,max_tokens:mt,messages:[{role:'system',content:system},{role:'user',content}]};
+    pick = d => (((d.choices||[])[0]||{}).message||{}).content||'';
+
+  }else{
+    url = c.base.replace(/\/$/,'')+'/v1beta/models/'+encodeURIComponent(c.model)+':generateContent?key='+encodeURIComponent(c.key);
+    headers = {'content-type':'application/json'};
+    const parts = img ? [{inline_data:{mime_type:img.media,data:img.b64}},{text}] : [{text}];
+    body = {systemInstruction:{parts:[{text:system}]},contents:[{role:'user',parts}],
+      generationConfig:{maxOutputTokens:mt,temperature:0.7}};
+    pick = d => (((d.candidates||[])[0]||{}).content||{}).parts?.map(p=>p.text||'').join('')||'';
+  }
+
+  let res;
+  try{
+    res = await fetch(url,{method:'POST',headers,body:JSON.stringify(body)});
+  }catch(e){
+    if(c.provider==='ollama') throw new Error('連不上本機 Ollama。請確認它正在執行，並且已設定 OLLAMA_ORIGINS=* 允許瀏覽器呼叫。');
+    if(proto==='proxy') throw new Error('連不上課程伺服器，請確認網路，或稍後再試。');
+    throw new Error('連不上這個服務。可能是網路問題，也可能是它不允許瀏覽器直接呼叫。');
+  }
+  if(!res.ok){
+    let detail='';
+    try{ const j=await res.json();
+      detail = typeof j.error==='string' ? j.error : ((j.error&&(j.error.message||j.error.type))||''); }catch(e){}
+    if(res.status===401||res.status===403) throw mkErr(proto==='proxy'
+      ? (detail||'通行碼不正確，請向課程主辦方索取。')
+      : ('金鑰無效或沒有權限。'+(detail?'（'+detail+'）':'')));
+    if(proto==='proxy' && detail) { const e=mkErr(detail); e.retryable = res.status===429||res.status>=500; throw e; }
+    if(res.status===429){
+      const e = mkErr('叫得太頻繁，或今天的免費額度用完了。'+(detail?'（'+detail+'）':''));
+      e.retryable = true; throw e;
+    }
+    if(res.status>=500){ const e=mkErr('對方的服務暫時出問題（HTTP '+res.status+'）。'); e.retryable=true; throw e; }
+    if(res.status===404) throw mkErr('找不到「'+c.model+'」這個模型。免費模型的名單常在變，到設定換一個試試。');
+    throw mkErr('模型回應失敗 HTTP '+res.status+(detail?'：'+detail:''));
+  }
+  const out = pick(await res.json());
+  if(!out) throw mkErr('AI 沒有回內容，再試一次，或換一個模型。');
+  return out;
+}
+function mkErr(m){ return new Error(m); }
+
+function parseJSON(raw){
+  let t = String(raw).replace(/```json/gi,'').replace(/```/g,'').trim();
+  t = t.replace(/^[\s\S]*?(?=[\[{])/,'');                    // 丟掉前面的贅語
+  t = t.replace(/<think>[\s\S]*?<\/think>/gi,'').trim();      // 丟掉推理模型的思考段
+  const end = Math.max(t.lastIndexOf(']'), t.lastIndexOf('}'));
+  if(end>-1) t = t.slice(0,end+1);
+  const tries = [
+    t,
+    t.replace(/,\s*([\]}])/g,'$1'),                           // 尾逗號
+    t.replace(/,\s*([\]}])/g,'$1').replace(/[""]/g,'"').replace(/['']/g,"'"),
+    closeBrackets(t.replace(/,\s*([\]}])/g,'$1'))             // 被截斷時補回括號
+  ];
+  for(const x of tries){ try{ return JSON.parse(x); }catch(e){} }
+  throw new Error('AI 回的格式不對，通常是小模型才會這樣。可以到設定調高輸出上限、減少頁數，或換一個模型。');
+}
+/* 輸出被截斷時，把還沒關的括號補齊，至少救回前面完整的部分 */
+function closeBrackets(t){
+  let out='', inStr=false, esc=false; const stack=[];
+  for(const ch of t){
+    if(esc){ esc=false; out+=ch; continue; }
+    if(ch==='\\'&&inStr){ esc=true; out+=ch; continue; }
+    if(ch==='"'){ inStr=!inStr; out+=ch; continue; }
+    if(!inStr){
+      if(ch==='['||ch==='{') stack.push(ch===','?'':ch==='['?']':'}');
+      else if(ch===']'||ch==='}') stack.pop();
+    }
+    out+=ch;
+  }
+  if(inStr) out+='"';
+  out = out.replace(/,\s*$/,'').replace(/:\s*$/,':null');
+  while(stack.length) out += stack.pop();
+  return out;
+}
+
+/* ---------- 素材切塊與檢索 ---------- */
+function chunkText(text,size){
+  size = size||480;
+  const out=[]; let buf='';
+  String(text).replace(/\r/g,'').trim().split(/\n{2,}/).forEach(p=>{
+    if((buf+p).length>size && buf){ out.push(buf.trim()); buf=''; }
+    if(p.length>size){ for(let i=0;i<p.length;i+=size) out.push(p.slice(i,i+size)); }
+    else buf += p+'\n\n';
+  });
+  if(buf.trim()) out.push(buf.trim());
+  return out.filter(c=>c.length>20);
+}
+function bigrams(s){
+  const t=String(s).toLowerCase().replace(/[\s.,;:!?、，。；：！？()「」【】]/g,'');
+  const o=[]; for(let i=0;i<t.length-1;i++) o.push(t.slice(i,i+2)); return o;
+}
+function allChunks(){
+  return S.materials.flatMap(m=>chunkText(m.text).map((t,i)=>({text:t,src:m.name,i})));
+}
+function retrieve(chunks,q,k){
+  k=k||3; if(!chunks.length) return [];
+  const g=[...new Set(bigrams(q))]; if(!g.length) return [];
+  return chunks.map(c=>{
+    const low=c.text.toLowerCase(); let sc=0;
+    g.forEach(x=>{ if(low.includes(x)) sc++; });
+    return Object.assign({},c,{score:sc/g.length});
+  }).filter(c=>c.score>0.05).sort((a,b)=>b.score-a.score).slice(0,k);
+}
+
+/* ---------- 工具 ---------- */
+const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function download(name,content,type){
+  const b=new Blob([content],{type:type||'text/plain;charset=utf-8'}), u=URL.createObjectURL(b);
+  const a=document.createElement('a'); a.href=u; a.download=name; a.click();
+  setTimeout(()=>URL.revokeObjectURL(u),2000);
+}
+/* 外部程式庫：依序試本機、jsdelivr、unpkg、cdnjs，任何一個成功就用它 */
+const LIBS = {
+  pptx:{ global:'PptxGenJS', file:'pptxgen.bundle.js', urls:[
+    './lib/pptxgen.bundle.js',
+    'https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js',
+    'https://unpkg.com/pptxgenjs@3.12.0/dist/pptxgen.bundle.js',
+    'https://cdnjs.cloudflare.com/ajax/libs/pptxgenjs/3.12.0/pptxgen.bundle.js']},
+  mammoth:{ global:'mammoth', file:'mammoth.browser.min.js', urls:[
+    './lib/mammoth.browser.min.js',
+    'https://cdn.jsdelivr.net/npm/mammoth@1.9.0/mammoth.browser.min.js',
+    'https://unpkg.com/mammoth@1.9.0/mammoth.browser.min.js',
+    'https://cdn.jsdelivr.net/npm/mammoth/mammoth.browser.min.js']},
+  xlsx:{ global:'XLSX', file:'xlsx.full.min.js', urls:[
+    './lib/xlsx.full.min.js',
+    'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js',
+    'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js',
+    'https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js',
+    'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js']},
+  pdfjs:{ global:'pdfjsLib', file:'pdf.min.js', urls:[
+    './lib/pdf.min.js',
+    'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js',
+    'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js',
+    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js']}
+};
+const libCache={};
+
+function loadOne(src, globalName){
+  return new Promise((ok,no)=>{
+    const el=document.createElement('script');
+    el.src=src; el.async=true;
+    const timer=setTimeout(()=>{ el.remove(); no(new Error('逾時')); }, 15000);
+    el.onload=()=>{ clearTimeout(timer);
+      window[globalName]?ok(src):no(new Error('載入後找不到 '+globalName)); };
+    el.onerror=()=>{ clearTimeout(timer); el.remove(); no(new Error('連不到')); };
+    document.head.appendChild(el);
+  });
+}
+
+/* 回傳 {lib, url}，url 用來推導同版本的 worker 位置 */
+async function loadLib(key){
+  const def=LIBS[key];
+  if(libCache[key]) return libCache[key];
+  if(window[def.global]) return (libCache[key]={lib:window[def.global], url:def.urls[0]});
+  const tried=[];
+  for(const u of def.urls){
+    try{
+      const url=await loadOne(u, def.global);
+      return (libCache[key]={lib:window[def.global], url});
+    }catch(e){ tried.push(/^\.\//.test(u)?'本機 lib 資料夾':u.replace(/^https:\/\//,'').split('/')[0]); }
+  }
+  const err=new Error(`載入 ${def.file} 失敗，已試過：${tried.join('、')}。`+
+    `如果貴單位網路擋外連，請把 ${def.file} 下載後放到與本頁面同一層的 lib 資料夾（./lib/${def.file}），重新整理即可離線使用。`);
+  err.lib=key; throw err;
+}
+
+/* 相容舊呼叫方式 */
+async function loadScript(src, globalName){
+  const key=Object.keys(LIBS).find(k=>LIBS[k].global===globalName);
+  if(key) return (await loadLib(key)).lib;
+  return loadOne(src,globalName).then(()=>window[globalName]);
+}
+
+async function loadPdfjs(){
+  const {lib,url}=await loadLib('pdfjs');
+  lib.GlobalWorkerOptions.workerSrc = url.replace(/pdf(\.min)?\.js$/, 'pdf.worker$1.js');
+  return lib;
+}
+function fileB64(f){
+  return new Promise((ok,no)=>{
+    const r=new FileReader();
+    r.onload=()=>ok(String(r.result).split(',')[1]);
+    r.onerror=()=>no(new Error('檔案讀取失敗'));
+    r.readAsDataURL(f);
+  });
+}
+function pickFile(accept,cb){
+  const i=document.createElement('input'); i.type='file'; i.accept=accept;
+  i.onchange=()=>{ const f=i.files&&i.files[0]; if(f) cb(f); };
+  i.click();
+}
+
+/* ---------- 版面引擎：把一頁資料畫成 HTML ---------- */
+function renderSlide(s, st, idx, total, editable){
+  const P=76, ed = editable ? ' contenteditable="true" spellcheck="false"' : '';
+  const E=(path,txt,style)=>`<div data-edit="${path}"${ed} style="${style}">${esc(txt)}</div>`;
+  const display = st.serif ? SERIF : SANS;
+  const grid = st.grid
+    ? `<div style="position:absolute;inset:0;opacity:.28;background-image:linear-gradient(${st.rule} 1px,transparent 1px),linear-gradient(90deg,${st.rule} 1px,transparent 1px);background-size:48px 48px"></div>` : '';
+
+  const bullets=(items,cols)=>{
+    cols=cols||1;
+    return `<div style="display:grid;grid-template-columns:repeat(${cols},1fr);gap:${cols>1?34:22}px">`+
+    (items||[]).map((b,i)=>`<div style="display:flex;gap:16px;align-items:flex-start">
+      <div style="margin-top:9px;width:10px;height:10px;flex:0 0 auto;background:${st.accent};border-radius:${st.radius>4?5:0}px"></div>
+      <div style="min-width:0">
+        ${E('b:'+i+':h', b.h||'', `font-size:27px;font-weight:600;line-height:1.35;color:${st.ink}`)}
+        ${b.d?E('b:'+i+':d', b.d, `font-size:19px;line-height:1.6;color:${st.sub};margin-top:6px`):''}
+      </div></div>`).join('')+`</div>`;
+  };
+  const foot = s.layout==='cover' ? '' :
+    `<div style="position:absolute;left:${P}px;right:${P}px;bottom:32px;display:flex;justify-content:space-between;
+      font-family:'IBM Plex Mono',monospace;font-size:14px;color:${st.sub};letter-spacing:1px">
+      <span>${esc(s.footer||'')}</span><span>${String(idx+1).padStart(2,'0')} / ${String(total).padStart(2,'0')}</span></div>`;
+
+  const kickerLine = st2 => s.kicker
+    ? E('kicker', s.kicker, `font-size:22px;font-weight:600;color:${st.accent};margin-bottom:${st2||14}px;line-height:1.4`)
+    : '';
+
+  let inner='';
+  if(s.layout==='cover'){
+    inner = `<div style="position:absolute;inset:0;padding:${P}px;display:flex;flex-direction:column;justify-content:center">
+      <div style="width:92px;height:6px;background:${st.accent};margin-bottom:34px"></div>
+      ${E('title', s.title||'', `font-size:74px;font-weight:700;line-height:1.14;font-family:${display};max-width:960px;letter-spacing:-1px;color:${st.ink}`)}
+      ${E('subtitle', s.subtitle||'', `font-size:25px;color:${st.sub};margin-top:26px;max-width:820px;line-height:1.5`)}
+    </div>`;
+  }else if(s.layout==='stat'){
+    inner = `<div style="position:absolute;inset:0;padding:${P}px;display:flex;flex-direction:column;justify-content:center">
+      ${E('title', s.title||'重點數據', `font-family:'IBM Plex Mono',monospace;font-size:15px;letter-spacing:2.4px;text-transform:uppercase;color:${st.accent};margin-bottom:14px`)}
+      ${kickerLine(18)}
+      ${E('stat:value', (s.stat&&s.stat.value)||'—', `font-size:168px;font-weight:700;line-height:1;font-family:${display};color:${st.accent};letter-spacing:-4px`)}
+      ${E('stat:label', (s.stat&&s.stat.label)||'', `font-size:28px;margin-top:24px;max-width:860px;line-height:1.5;color:${st.ink}`)}
+    </div>`;
+  }else if(s.layout==='quote'){
+    inner = `<div style="position:absolute;inset:0;padding:${P}px;display:flex;flex-direction:column;justify-content:center">
+      ${kickerLine(10)}
+      <div style="font-size:120px;line-height:.6;color:${st.accent};font-family:${display}">&ldquo;</div>
+      ${E('quote:text', (s.quote&&s.quote.text)||s.title||'', `font-size:44px;font-weight:600;line-height:1.45;font-family:${display};max-width:1000px;margin-top:20px;color:${st.ink}`)}
+      ${E('quote:by', (s.quote&&s.quote.by)||'', `font-size:20px;color:${st.sub};margin-top:30px;font-family:'IBM Plex Mono',monospace`)}
+    </div>`;
+  }else if(s.layout==='twoCol'){
+    const cols=(s.columns&&s.columns.length?s.columns:[{h:'',items:[]},{h:'',items:[]}]).slice(0,2);
+    inner = `<div style="position:absolute;inset:0;padding:${P}px;display:flex;flex-direction:column">
+      ${kickerLine(10)}
+      ${E('title', s.title||'', `font-size:44px;font-weight:700;font-family:${display};margin-bottom:28px;color:${st.ink}`)}
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:40px;flex:1">
+      ${cols.map((c,ci)=>`<div style="background:${st.surface};border-radius:${st.radius}px;padding:30px;border-top:4px solid ${ci?st.accent2:st.accent}">
+        ${E('c:'+ci+':h', c.h||'', `font-size:25px;font-weight:700;margin-bottom:18px;font-family:${display};color:${st.ink}`)}
+        ${(c.items||[]).map((it,ii)=>E('c:'+ci+':i:'+ii, it, `font-size:20px;line-height:1.65;color:${st.sub};margin-bottom:12px`)).join('')}
+      </div>`).join('')}</div></div>`;
+  }else if(s.layout==='closing'){
+    inner = `<div style="position:absolute;inset:0;padding:${P}px;display:flex;flex-direction:column;justify-content:center">
+      ${kickerLine(12)}
+      ${E('title', s.title||'', `font-size:64px;font-weight:700;font-family:${display};line-height:1.2;max-width:940px;color:${st.ink}`)}
+      <div style="width:120px;height:6px;background:${st.accent};margin:24px 0"></div>
+      ${bullets((s.bullets||[]).slice(0,3))}</div>`;
+  }else{
+    const agenda = s.layout==='agenda';
+    inner = `<div style="position:absolute;inset:0;padding:${P}px;display:flex;flex-direction:column">
+      ${agenda?`<div style="font-family:'IBM Plex Mono',monospace;font-size:15px;letter-spacing:2.4px;color:${st.accent};margin-bottom:18px">AGENDA</div>`:''}
+      ${kickerLine(14)}
+      ${E('title', s.title||'', `font-size:44px;font-weight:700;font-family:${display};line-height:1.25;margin-bottom:12px;color:${st.ink}`)}
+      <div style="width:64px;height:4px;background:${st.accent};margin-bottom:34px"></div>
+      <div style="flex:1">${bullets(s.bullets,(s.bullets||[]).length>4?2:1)}</div></div>`;
+  }
+
+  return `<div style="position:absolute;inset:0;background:${st.bg};color:${st.ink};font-family:${SANS};overflow:hidden">
+    ${grid}<div style="position:absolute;inset:0">${inner}</div>${foot}</div>`;
+}
+
+/* 把編輯路徑寫回資料 */
+function applyEdit(idx, path, value){
+  const s = S.slides[idx]; if(!s) return;
+  pushHistory(idx);
+  const p = path.split(':');
+  if(p[0]==='title') s.title=value;
+  else if(p[0]==='kicker') s.kicker=value;
+  else if(p[0]==='subtitle') s.subtitle=value;
+  else if(p[0]==='b'){ s.bullets=s.bullets||[]; if(s.bullets[+p[1]]) s.bullets[+p[1]][p[2]]=value; }
+  else if(p[0]==='c'){ s.columns=s.columns||[];
+    if(!s.columns[+p[1]]) return;
+    if(p[2]==='h') s.columns[+p[1]].h=value; else s.columns[+p[1]].items[+p[3]]=value; }
+  else if(p[0]==='stat'){ s.stat=s.stat||{}; s.stat[p[1]]=value; }
+  else if(p[0]==='quote'){ s.quote=s.quote||{}; s.quote[p[1]]=value; }
+  s.status='edited'; saveDraft();
+}
+function pushHistory(idx){
+  const s=S.slides[idx]; if(!s) return;
+  const clone = JSON.parse(JSON.stringify(Object.assign({},s,{history:undefined})));
+  s.history = (s.history||[]).concat([clone]).slice(-6);
+}
+
+/* ---------- AI 動作 ---------- */
+async function genOutline(){
+  if(!S.topic.trim()) return fail('先填簡報主題才能生成大綱。');
+  toast(S.economy?'生成中':'規劃大綱中');
+  try{
+    const st=curStyle();
+    const cap = S.economy?900:400;
+    const digest = S.materials.length
+      ? S.materials.map(m=>'【'+m.name+'】'+m.text.slice(0,cap)).join('\n').slice(0,S.economy?3200:1600)
+      : '（沒有提供素材，請依主題本身的常識撰寫）';
+    const sys='你是簡報架構師。只輸出 JSON 陣列，不要任何說明文字、不要 markdown 圍籬、不要註解。';
+
+    const prompt = S.economy ?
+`一次產出完整簡報內容。
+
+主題：${S.topic}
+對象：${S.audience}
+頁數：正好 ${S.pages} 頁（含封面與結尾）
+語氣：${S.tone}
+風格提示：${st.prompt}
+參考素材：
+${digest}
+
+輸出 JSON 陣列，每頁一個物件，依 layout 帶對應欄位：
+- {"layout":"cover","title":"","subtitle":"","note":""}
+- {"layout":"agenda"|"bullets"|"closing","title":"","bullets":[{"h":"要點","d":"補充"}],"note":""}
+- {"layout":"twoCol","title":"","columns":[{"h":"","items":["","",""]},{"h":"","items":["","",""]}],"note":""}
+- {"layout":"stat","title":"","stat":{"value":"數字或短詞","label":"說明"},"note":""}
+- {"layout":"quote","title":"","quote":{"text":"","by":""},"note":""}
+
+規則：
+- 第一頁必為 cover，最後一頁必為 closing
+- 中間至少出現一次 stat 或 twoCol，其餘用 bullets
+- title 不超過 20 字，h 不超過 16 字，d 不超過 26 字，note 不超過 30 字
+- bullets 每頁 3 至 4 個，內容要具體，不要空話
+- 全部使用繁體中文，只輸出 JSON 陣列` :
+
+`為以下需求規劃簡報大綱骨架。
+
+主題：${S.topic}
+對象：${S.audience}
+頁數：${S.pages}（含封面與結尾）
+語氣：${S.tone}
+風格提示：${st.prompt}
+參考素材：
+${digest}
+
+輸出 JSON 陣列，每個元素代表一頁：
+{"layout":"cover|agenda|bullets|twoCol|stat|quote|closing","title":"標題","subtitle":"僅封面用","bullets":[{"h":"要點","d":"補充"}],"note":"講稿一句"}
+
+規則：
+- 第一頁 layout 必為 cover，最後一頁必為 closing
+- 中間至少出現一次 stat 或 twoCol
+- title 不超過 20 字，h 不超過 16 字，d 不超過 26 字，note 不超過 30 字
+- bullets 每頁 3 至 4 個
+- 全部使用繁體中文，只輸出 JSON`;
+
+    const arr = parseJSON(await ask(sys,prompt));
+    if(!Array.isArray(arr)||!arr.length) throw new Error('模型沒有回傳可用的頁面，請再試一次。');
+    S.slides = arr.slice(0,16).map(x=>{
+      const s = normalize(x);
+      if(S.economy) s.status='generated';
+      return s;
+    });
+    S.cursor=0; S.view='editor'; S.tab='outline'; saveDraft(); done();
+  }catch(e){ fail(e.message); }
+}
+
+/* 一條龍：貼什麼都行，一次請求推斷設定並產出完整簡報 */
+async function genFromBrief(){
+  const raw = (S.brief||'').trim();
+  if(!raw) return fail('先貼上內容或說一句你想做什麼簡報。');
+  toast('生成中');
+  try{
+    // 貼的內容夠長就順手存成素材，之後單頁重生時可以檢索
+    if(raw.length>800 && !S.materials.some(m=>m.text===raw)){
+      S.materials.push({id:uid(),name:'貼上的內容',text:raw});
+    }
+    const hint = [
+      S.audience?('對象：'+S.audience):'',
+      S.tone?('語氣：'+S.tone):'',
+      S.pages?('頁數：正好 '+S.pages+' 頁'):'',
+      S.adv?('指定風格：'+curStyle().name):''
+    ].filter(Boolean).join('\n');
+
+    const styleList = S.styles.map(s=>s.id+'（'+s.name+'：'+s.desc+'）').join('、');
+    const sys='你是簡報架構師。只輸出一個 JSON 物件，不要任何說明文字、不要 markdown 圍籬。';
+    const prompt =
+`以下是使用者提供的內容。它可能是一句需求、一段會議記錄、一份文件、或一段講稿。
+請自己判斷該做成什麼簡報，然後直接產出完整內容。
+
+===== 使用者內容開始 =====
+${raw.slice(0,12000)}
+===== 使用者內容結束 =====
+
+${hint?('使用者另外指定了：\n'+hint+'\n'):'頁數請自己判斷，一般 6 到 10 頁；對象與語氣也請從內容推斷。\n'}
+可選風格：${styleList}
+
+輸出這個 JSON 物件：
+{"meta":{"topic":"簡報主題","audience":"聽眾","tone":"語氣","styleId":"從可選風格挑一個最合適的 id"},
+ "slides":[ 每頁一個物件 ]}
+
+每頁依 layout 帶對應欄位：
+- {"layout":"cover","title":"","subtitle":"","note":""}
+- {"layout":"agenda"|"bullets"|"closing","title":"","bullets":[{"h":"要點","d":"補充"}],"note":""}
+- {"layout":"twoCol","title":"","columns":[{"h":"","items":["","",""]},{"h":"","items":["","",""]}],"note":""}
+- {"layout":"stat","title":"","stat":{"value":"數字或短詞","label":"說明"},"note":""}
+- {"layout":"quote","title":"","quote":{"text":"","by":""},"note":""}
+
+規則：
+- 第一頁必為 cover，最後一頁必為 closing
+- 內容有數據就用 stat，有對照關係就用 twoCol，其餘用 bullets
+- title 不超過 20 字，h 不超過 16 字，d 不超過 26 字，note 不超過 30 字
+- bullets 每頁 3 至 4 個，要寫使用者內容裡真正有的東西，不要填空話
+- 全部使用繁體中文，只輸出 JSON`;
+
+    const o = parseJSON(await ask(sys,prompt));
+    const arr = Array.isArray(o) ? o : (o.slides||[]);
+    if(!arr.length) throw new Error('模型沒有回傳可用的頁面，請再試一次。');
+    const meta = o.meta||{};
+    if(meta.topic) S.topic=meta.topic;
+    else S.topic = raw.slice(0,24).replace(/\n/g,' ');
+    if(meta.audience) S.audience=meta.audience;
+    if(meta.tone) S.tone=meta.tone;
+    if(!S.adv && meta.styleId && S.styles.some(s=>s.id===meta.styleId)){
+      S.styleId=meta.styleId; LS.set('styleId',S.styleId);
+    }
+    S.slides = arr.slice(0,16).map(x=>{ const s=normalize(x); s.status='generated'; return s; });
+    S.pages = S.slides.length;
+    S.cursor=0; S.view='editor'; S.tab='outline'; saveDraft(); done();
+  }catch(e){ fail(e.message); }
+}
+/* ---------- 課程情境：直接內建課綱的兩個實戰素材 ---------- */
+const SCENARIOS = {
+  monthly:{
+    name:'情境一　定期更新型',
+    unit:'第三單元 3-1',
+    desc:'每月都要交的固定格式報告。重點是把版型與規範固定下來，之後只換數據重跑。',
+    example:'以「全台 22 縣市用電數據月報」為例',
+    audience:'縣市政府長官與社區村里長',
+    pages:3,
+    outline:'第 1 頁：全台總體趨勢與宣導績效總覽\n第 2 頁：高成長縣市與用電異常警示\n第 3 頁：下一階段資源精準投放策略建議',
+    material:`全台 22 縣市 2026 年 7 月住宅用電與節能宣導績效統計表
+資料時間：2026年7月1日 - 2026年7月31日 ｜ 單位：萬度(kWh)、%、場、人次
+
+縣市名稱 | 2026年7月用電量(萬度) | 2025年7月用電量(萬度) | 同比增減(%) | 宣導辦理場次(場) | 參與總人數(人次)
+臺北市 | 12650 | 12500 | +1.20% | 14 | 924
+新北市 | 18888 | 18500 | +2.10% | 21 | 1533
+基隆市 | 1791 | 1800 | -0.50% | 3 | 267
+桃園市 | 11626 | 11200 | +3.80% | 12 | 1056
+新竹市 | 2436 | 2400 | +1.50% | 6 | 390
+新竹縣 | 3022 | 2900 | +4.20% | 4 | 352
+苗栗縣 | 2391 | 2370 | +0.90% | 5 | 365
+臺中市 | 14186 | 13800 | +2.80% | 18 | 1656
+彰化縣 | 5864 | 5800 | +1.10% | 7 | 469
+南投縣 | 2182 | 2200 | -0.80% | 3 | 201
+雲林縣 | 2914 | 2900 | +0.50% | 6 | 480
+嘉義市 | 1202 | 1200 | +0.20% | 3 | 324
+嘉義縣 | 2117 | 2100 | +0.80% | 5 | 425
+臺南市 | 9105 | 8900 | +2.30% | 10 | 1080
+高雄市 | 13451 | 13200 | +1.90% | 14 | 1078
+屏東縣 | 3955 | 3900 | +1.40% | 6 | 414
+宜蘭縣 | 2077 | 2100 | -1.10% | 3 | 321
+花蓮縣 | 1571 | 1600 | -1.80% | 5 | 445
+臺東縣 | 1090 | 1100 | -0.90% | 2 | 202
+澎湖縣 | 666 | 650 | +2.50% | 4 | 356
+金門縣 | 495 | 480 | +3.10% | 3 | 300
+連江縣 | 81 | 80 | +1.20% | 2 | 120
+全台總計 | 113760 | 111680 | +1.86% | 156 | 12848`
+  },
+  compare:{
+    name:'情境二　臨時交辦型',
+    unit:'第三單元 3-2',
+    desc:'主管突然要一份對比報告。重點是先建對比矩陣，再提煉重點，用雙欄版型呈現。',
+    example:'以「國內外家電補助與節能推廣比較」為例',
+    audience:'決策主管與政策幕僚',
+    pages:3,
+    outline:'第 1 頁：台日補助政策對照\n第 2 頁：社區推廣與通路滲透策略比較\n第 3 頁：台灣可借鏡的具體建議',
+    material:`台灣 vs 日本 2026 家電補助與節能推廣比較資料
+
+【補助制度】
+台灣：冷氣、冰箱每台定額補助 3,000 元，由住宅節能基金支應，全面線上化審查。
+日本：依省電等級分級補助 1 萬至 5 萬日圓，結合地方自治體與碳費加價支應，透過指定店家直接折抵消費金額。
+
+【成效】
+日本高階節能家電換購率達 42%；台灣補助普及率達 65%。
+
+【社區推廣模式】
+台灣：以鄉鎮市區公所與村里長為核心，舉辦實體節能宣導說明會，高齡者覆蓋率高。
+日本：結合在地「地域電器店」提供到府量身診斷，成功深入年輕租屋族群。
+
+【數位工具】
+台灣：推廣線上用電試算。
+日本：結合智慧電錶數據自動傳送節電建議。
+
+【已知借鏡方向】
+一、研擬依能源效率等級的階梯式補助，引導購買最高等級家電。
+二、培訓在地家電行與水電師傅成為住宅節能診斷師。
+三、實體通路直接折抵可減少民眾約 80% 的線上申請補件時間。`
+  },
+  own:{
+    name:'我自己的題目',
+    unit:'自由發揮',
+    desc:'貼上你手上的資料：會議記錄、統計表、政策文件、講稿都可以。',
+    example:'流程與課程情境完全一樣',
+    audience:'', pages:0, outline:'', material:''
+  }
+};
+
+/* 結構化的簡報規範，對應課程第二單元 */
+const RULES_BASE = {
+  role:'專精於住宅節能診斷與推廣的高階顧問',
+  audience:'縣市政府長官與社區村里長',
+  pages:3, titleMax:15, kickerMax:20, bulletCount:4, bulletMax:30,
+  units:true, banned:'顯著增加、非常多、大幅、相當不錯'
+};
+function rulesObj(){ return Object.assign({}, RULES_BASE, LS.get('rulesObj',{})); }
+function buildRulesText(r){
+  r = r || rulesObj();
+  return `[角色設定] 你是一位${r.role}。
+[目標受眾] ${r.audience}（需用數據說話、邏輯清晰、強調行動建議）。
+[頁數規範] 總頁數固定為 ${r.pages} 頁。
+[每頁格式規範]
+- 頁標題：${r.titleMax} 字以內，精準帶出主題。
+- 核心結論：${r.kickerMax} 字以內，用一句話點出該頁精髓，放置於頁首。
+- 條列內容：最多 ${r.bulletCount} 點，每點 ${r.bulletMax} 字以內${r.units?'，必須包含精確數據與單位（萬度、%、場、人次、元）':''}。
+[嚴格禁令] 嚴禁使用「${r.banned}」等模糊形容詞。`;
+}
+
+/* ---------- 檔案解析：Word / PDF / Excel / CSV / 文字 ---------- */
+const ACCEPT = '.txt,.md,.markdown,.csv,.tsv,.docx,.pdf,.xlsx,.xls';
+
+async function parseUpload(file){
+  const name=file.name, ext=(name.split('.').pop()||'').toLowerCase();
+
+  if(['txt','md','markdown','csv','tsv'].includes(ext)){
+    const raw=await file.text();
+    return (ext==='csv'||ext==='tsv') ? tableDigest(name, csvRows(raw, ext==='tsv'?'\t':',')) : raw;
+  }
+
+  if(ext==='docx'){
+    const mammoth=(await loadLib('mammoth')).lib;
+    const r=await mammoth.extractRawText({arrayBuffer:await file.arrayBuffer()});
+    return r.value.trim();
+  }
+
+  if(ext==='pdf'){
+    const pdfjs=await loadPdfjs();
+    const doc=await pdfjs.getDocument({data:await file.arrayBuffer()}).promise;
+    const pages=Math.min(doc.numPages,40); const out=[];
+    for(let i=1;i<=pages;i++){
+      const c=await (await doc.getPage(i)).getTextContent();
+      out.push(c.items.map(x=>x.str).join(' ').replace(/\s+/g,' ').trim());
+    }
+    const text=out.filter(Boolean).join('\n\n');
+    if(!text.trim()) throw new Error('這份 PDF 讀不到文字，可能是掃描檔或圖片檔。請改用可選取文字的 PDF，或直接把內容貼進框裡。');
+    return text + (doc.numPages>pages?`\n\n（原檔共 ${doc.numPages} 頁，只讀取前 ${pages} 頁）`:'');
+  }
+
+  if(ext==='xlsx'||ext==='xls'){
+    const XLSX=(await loadLib('xlsx')).lib;
+    const wb=XLSX.read(await file.arrayBuffer(),{type:'array'});
+    return wb.SheetNames.slice(0,3).map(sn=>{
+      const rows=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,blankrows:false,defval:''});
+      return tableDigest(`${name} / 工作表：${sn}`, rows);
+    }).join('\n\n');
+  }
+
+  throw new Error(`還不支援 .${ext} 這種檔案。可以先另存成 PDF、Word、Excel 或純文字，或直接把內容貼進框裡。`);
+}
+
+function csvRows(raw, sep){
+  return raw.replace(/\r/g,'').split('\n').filter(l=>l.trim())
+    .map(l=>l.split(sep).map(c=>c.replace(/^"|"$/g,'').trim()));
+}
+
+/* 把表格轉成文字，並且先在本機算好統計，不要讓 AI 自己加總 */
+function tableDigest(title, rows){
+  rows=(rows||[]).filter(r=>r && r.some(c=>String(c).trim()!==''));
+  if(!rows.length) return `【${title}】（空白表格）`;
+  const head=rows[0].map(c=>String(c).trim());
+  const body=rows.slice(1).map(r=>head.map((_,i)=>String(r[i]==null?'':r[i]).trim()));
+
+  const num=s=>{
+    const t=String(s).replace(/[,，\s%％]/g,'').replace(/^\+/,'');
+    if(t===''||isNaN(Number(t))) return null;
+    return Number(t);
+  };
+  const stats=[];
+  head.forEach((h,ci)=>{
+    if(ci===0) return;
+    const vals=body.map(r=>num(r[ci])).filter(v=>v!==null);
+    if(vals.length < Math.max(3, body.length*0.6)) return;   // 不是數值欄就跳過
+    const sum=vals.reduce((a,b)=>a+b,0);
+    const pairs=body.map(r=>({k:r[0], v:num(r[ci])})).filter(p=>p.v!==null)
+      .sort((a,b)=>b.v-a.v);
+    const fmt=n=>Number.isInteger(n)?n.toLocaleString():n.toFixed(2);
+    stats.push(`- ${h}：合計 ${fmt(sum)}｜平均 ${fmt(sum/vals.length)}｜`+
+      `最高 ${pairs[0].k} ${fmt(pairs[0].v)}｜最低 ${pairs[pairs.length-1].k} ${fmt(pairs[pairs.length-1].v)}\n`+
+      `  前三名：${pairs.slice(0,3).map(p=>`${p.k} ${fmt(p.v)}`).join('、')}`);
+  });
+
+  const table=[head.join(' | ')].concat(body.slice(0,60).map(r=>r.join(' | '))).join('\n');
+  return `【${title}】共 ${body.length} 列資料\n\n${table}`
+    + (body.length>60?`\n（僅列出前 60 列）`:'')
+    + (stats.length?`\n\n※ 以下統計已由系統精確計算，請直接引用，不要自行加總：\n${stats.join('\n')}`:'');
+}
+
+async function handleUpload(file, done2){
+  if(!file) return;
+  toast(`讀取 ${file.name}`);
+  try{
+    const text=await parseUpload(file);
+    S.brief = (S.brief||'').trim() ? (S.brief.trim()+'\n\n'+text) : text;
+    S.uploads=(S.uploads||[]).concat([{name:file.name, len:text.length}]);
+    saveDraft(); done(); if(done2) done2();
+  }catch(e){
+    fail(e.message);
+  }
+}
+
+/* ---------- 用自己習慣的 AI 工具：產生指令 → 貼回結果 ---------- */
+
+function buildPrompt(){
+  const raw=(S.brief||'').trim();
+  const rules=(S.rules||buildRulesText()).trim();
+  const plan=S.plan?('\n[頁面規劃]\n'+S.plan+'\n'):'';
+  return `${rules}
+
+[輸出格式] 請嚴格以下列 Markdown 格式輸出，每一頁一個區塊，不要加任何其他說明文字：
+
+# 頁標題
+> 核心結論
+- 條列一
+- 條列二
+- 條列三
+${plan}
+[素材] 以下是要做成簡報的內容：
+${raw||'（請先在平台的輸入框貼上素材，再回來按一次「產生指令」）'}`;
+}
+
+/* 解析 AI 回覆。盡量寬鬆：不同工具的 Markdown 習慣差很多 */
+function parseMarkdownDeck(text){
+  let t=String(text).replace(/\r/g,'').trim();
+  if(!t) throw new Error('內容是空的，請先把 AI 的回覆貼進來。');
+
+  if(/^[\[{]/.test(t)){
+    try{
+      const o=parseJSON(t); const arr=Array.isArray(o)?o:(o.slides||[]);
+      if(arr.length) return arr.map(x=>normalize(x));
+    }catch(e){ /* 不是 JSON 就繼續走 Markdown */ }
+  }
+
+  t = t.replace(/<think>[\s\S]*?<\/think>/gi,'')      // 推理模型的思考段
+       .replace(/^\s*```[a-z]*\s*$/gim,'')            // 程式碼圍籬
+       .replace(/^[＃#]/gm,'#')                        // 全形井號
+       .replace(/^[　\t]+/gm,'')                       // 全形空白縮排
+       .replace(/^[－—–]\s*/gm,'- ');                  // 各種破折號當條列
+
+  const heading = L =>{
+    let m;
+    if((m=L.match(/^#{1,6}\s*(.+?)\s*$/))) return m[1];
+    if((m=L.match(/^\*\*(.+?)\*\*\s*[：:]?\s*$/))) return m[1];          // 只有粗體的一行
+    if((m=L.match(/^(?:第\s*\d+\s*頁|投影片\s*\d+|頁\s*\d+|Slide\s*\d+)\s*[：:．.、\-]?\s*(.*)$/i)))
+      return m[1]||L.trim();                                             // 第 1 頁：xxx
+    return null;
+  };
+  const kicker = L =>{
+    let m;
+    if((m=L.match(/^[>＞]\s*(.+?)\s*$/))) return m[1];
+    if((m=L.match(/^\**(?:核心結論|重點結論|結論|一句話)\**\s*[：:]\s*(.+?)\s*$/))) return m[1];
+    return null;
+  };
+  const bullet = L =>{
+    let m;
+    if((m=L.match(/^[-*•‧·+◦▪]\s*(.+?)\s*$/))) return m[1];
+    if((m=L.match(/^\d+\s*[.、)）]\s*(.+?)\s*$/))) return m[1];
+    return null;
+  };
+  const clean = s => String(s).replace(/\*\*/g,'').replace(/^\s*[:：]\s*/,'').trim();
+  // AI 常在最後加一句客套話，不要把它當成條列
+  const CLOSER=/^(希望|以上|如需|如果需要|需要我|請問|讓我知道|有任何|祝|Hope|Let me know|Feel free)/;
+
+  const lines=t.split('\n');
+  const slides=[]; let cur=null;
+  lines.forEach(L=>{
+    if(!L.trim()) return;
+    const h=heading(L);
+    if(h!==null && clean(h)){ cur={title:clean(h),kicker:'',bullets:[]}; slides.push(cur); return; }
+    if(!cur) return;
+    const k=kicker(L);
+    if(k!==null && !cur.kicker){ cur.kicker=clean(k); return; }
+    const b=bullet(L);
+    if(b!==null && clean(b)){ cur.bullets.push(clean(b)); return; }
+    // 沒有符號的普通句子：短的當結論，長的當一條要點
+    const plain=clean(L);
+    if(!plain || CLOSER.test(plain)) return;
+    if(!cur.kicker && plain.length<=30 && !cur.bullets.length) cur.kicker=plain;
+    else cur.bullets.push(plain);
+  });
+
+  // 完全沒抓到標題時，用空行分段當作分頁
+  if(!slides.length){
+    t.split(/\n{2,}/).forEach(block=>{
+      const ls=block.split('\n').map(x=>x.trim()).filter(Boolean);
+      if(!ls.length) return;
+      const s={title:clean(ls[0]).slice(0,40),kicker:'',bullets:[]};
+      ls.slice(1).forEach(L=>{ const b=bullet(L); s.bullets.push(clean(b!==null?b:L)); });
+      slides.push(s);
+    });
+  }
+  if(!slides.length){
+    throw new Error('看不出來哪裡分頁。每頁的標題用 # 開頭，或用「第 1 頁：」開頭，也可以每頁之間空一行。');
+  }
+
+  return slides.map((x,i)=>{
+    // 只有在不會弄丟內容時才套用封面／結尾版型
+    const isFirst=i===0, isLast=i===slides.length-1 && slides.length>1;
+    let layout='bullets';
+    if(isFirst && !x.bullets.length) layout='cover';
+    else if(isLast && x.bullets.length<=3) layout='closing';
+    const s=normalize({
+      layout, title:x.title,
+      subtitle: layout==='cover'?x.kicker:'',
+      bullets:x.bullets.slice(0,6).map(one=>{
+        const m=one.match(/^(.{2,18}?)[：:]\s*(.+)$/) || one.match(/^(.{4,16}?)[，、]\s*(.{6,})$/);
+        return m?{h:m[1],d:m[2]}:{h:one,d:''};
+      })
+    });
+    s.kicker = layout==='cover'?'':x.kicker;
+    s.note = x.kicker||'';
+    s.status='generated';
+    return s;
+  });
+}
+
+/* 貼上當下就先偵測，不要等按下一步才報錯 */
+function previewParse(text){
+  try{
+    const s=parseMarkdownDeck(text);
+    const empty=s.every(x=>!x.bullets.length);
+    return {ok:true, thin: s.length<2 && empty, n:s.length, titles:s.slice(0,3).map(x=>x.title)};
+  }
+  catch(e){ return {ok:false,msg:e.message}; }
+}
+
+function importPasted(){
+  const el=document.getElementById('pasteBack');
+  const txt=el?el.value:'';
+  if(!txt.trim()) return fail('請先把 AI 產生的內容貼進下面的框。');
+  if(S.wizard){
+    S.md=txt.trim(); S.modal=null; S.step=Math.max(S.step,4); render(); return;
+  }
+  try{
+    const slides=parseMarkdownDeck(txt);
+    if(!S.topic) S.topic=slides[0].title||'未命名簡報';
+    slides.forEach(s=>s.footer=(S.topic||'').slice(0,24));
+    S.slides=slides; S.pages=slides.length; S.cursor=0;
+    S.modal=null; S.view='editor'; S.tab='outline'; saveDraft(); render();
+  }catch(e){ fail(e.message); }
+}
+
+function genLocal(){
+  const t = (S.topic||S.brief||'').trim().slice(0,40).replace(/\n/g,' ') || '未命名簡報';
+  S.topic = t;
+  const n = Math.max(4,Math.min(14, S.pages||7));
+  const mid=['現況與問題','做法與方案','關鍵取捨','實際成果','風險與限制','時程與分工','後續規劃'];
+  const out=[normalize({layout:'cover',title:t,subtitle:(S.audience?S.audience+'　·　':'')+new Date().toISOString().slice(0,10),note:'開場，說明今天要解決什麼問題'})];
+  out.push(normalize({layout:'agenda',title:'今天談三件事',
+    bullets:[{h:'我們遇到的問題',d:'先對齊現況'},{h:'打算怎麼做',d:'方案與取捨'},{h:'需要什麼決定',d:'今天要拍板的事'}],
+    note:'把聽眾的期待先框好'}));
+  for(let i=0;i<n-3;i++){
+    const title=mid[i%mid.length];
+    out.push(normalize({layout: i===1?'twoCol': i===2?'stat':'bullets', title:title,
+      bullets:[{h:'要點一',d:'補充說明'},{h:'要點二',d:'補充說明'},{h:'要點三',d:'補充說明'}],
+      columns:[{h:'方案 A',items:['優點','成本','風險']},{h:'方案 B',items:['優點','成本','風險']}],
+      stat:{value:'00%',label:'把最有說服力的一個數字放這裡'},
+      note:'這頁想讓聽眾記住什麼'}));
+  }
+  out.push(normalize({layout:'closing',title:'我們建議這樣做',
+    bullets:[{h:'下一步',d:'誰、做什麼、什麼時候'}],note:'收尾，明確提出要對方做的決定'}));
+  S.slides=out.slice(0,n); S.cursor=0; S.view='editor'; S.tab='outline'; saveDraft(); render();
+}
+
+function normalize(x){
+  return {
+    id:uid(), layout: LAYOUTS[x.layout]?x.layout:'bullets',
+    title:x.title||'未命名', subtitle:x.subtitle||'', kicker:x.kicker||'',
+    bullets: Array.isArray(x.bullets)? x.bullets.map(b=> typeof b==='string'?{h:b,d:''}:{h:b.h||'',d:b.d||''}) : [],
+    columns:x.columns||null, stat:x.stat||null, quote:x.quote||null,
+    note:x.note||'', footer:(S.topic||'').slice(0,24), status:'draft', history:[]
+  };
+}
+
+async function genOne(i,silent){
+  const s=S.slides[i]; if(!s) return;
+  if(!silent) toast('重新生成第 '+(i+1)+' 頁');
+  const st=curStyle();
+  const hits = retrieve(allChunks(), s.title+' '+(s.bullets||[]).map(b=>b.h).join(' '));
+  const sys='你是簡報內容編輯。只輸出單一 JSON 物件，不要任何說明或 markdown 圍籬。';
+  const prompt =
+`為這一頁補完內容。
+
+簡報主題：${S.topic}｜對象：${S.audience}｜語氣：${S.tone}
+風格提示：${st.prompt}
+
+目前這頁：
+${JSON.stringify({layout:s.layout,title:s.title,bullets:s.bullets,subtitle:s.subtitle})}
+
+可用素材：
+${hits.length? hits.map(h=>'['+h.src+'] '+h.text.slice(0,300)).join('\n') : '（無，請依主題常識撰寫）'}
+
+依 layout 輸出對應欄位的 JSON 物件：
+- cover：title、subtitle
+- agenda / bullets / closing：title、bullets（3–4 個 {h,d}）
+- twoCol：title、columns（兩個 {h, items:[3個字串]}）
+- stat：title、stat {value,label}，value 是數字或短詞
+- quote：quote {text,by}
+所有版型都要有 note（講稿一句，30 字內）。
+繁體中文，h 不超過 16 字，d 不超過 26 字。只輸出 JSON。`;
+  const o = parseJSON(await ask(sys,prompt));
+  pushHistory(i);
+  if(o.title) s.title=o.title;
+  if(o.subtitle) s.subtitle=o.subtitle;
+  if(Array.isArray(o.bullets)) s.bullets=o.bullets.map(b=> typeof b==='string'?{h:b,d:''}:{h:b.h||'',d:b.d||''});
+  if(o.columns) s.columns=o.columns;
+  if(o.stat) s.stat=o.stat;
+  if(o.quote) s.quote=o.quote;
+  if(o.note) s.note=o.note;
+  s.status='generated'; saveDraft();
+  if(!silent) done();
+}
+
+async function genAll(){
+  for(let i=0;i<S.slides.length;i++){
+    toast('第 '+(i+1)+' / '+S.slides.length+' 頁');
+    try{ await genOne(i,true); }catch(e){ return fail(e.message); }
+    render();
+  }
+  done();
+}
+
+async function reviseOne(){
+  if(!S.instruction.trim()) return;
+  const i=S.cursor, s=S.slides[i];
+  toast('修改中');
+  try{
+    const sys='你是簡報編輯。依指令改寫這一頁，只輸出單一 JSON 物件，保持相同欄位結構。';
+    const prompt =
+`這一頁目前是：
+${JSON.stringify({layout:s.layout,title:s.title,subtitle:s.subtitle,bullets:s.bullets,columns:s.columns,stat:s.stat,quote:s.quote,note:s.note})}
+
+修改指令：${S.instruction}
+
+保持 layout 不變（除非指令明確要求換版型，可選 ${Object.keys(LAYOUTS).join('/')}）。繁體中文，只輸出 JSON。`;
+    const o = parseJSON(await ask(sys,prompt));
+    pushHistory(i);
+    ['title','subtitle','note','stat','quote','columns'].forEach(k=>{ if(o[k]) s[k]=o[k]; });
+    if(o.layout && LAYOUTS[o.layout]) s.layout=o.layout;
+    if(Array.isArray(o.bullets)) s.bullets=o.bullets.map(b=> typeof b==='string'?{h:b,d:''}:{h:b.h||'',d:b.d||''});
+    s.status='edited'; S.instruction=''; saveDraft(); done();
+  }catch(e){ fail(e.message); }
+}
+
+async function createStyle(descText){
+  if(!descText.trim()) return;
+  toast('調配風格中');
+  try{
+    const sys='你是簡報視覺設計師。只輸出單一 JSON 物件，不要說明文字。';
+    const o = parseJSON(await ask(sys,
+`依這段描述設計一組簡報配色：「${descText}」
+
+輸出：
+{"name":"四字以內名稱","desc":"12字內說明","bg":"#hex 背景","surface":"#hex 卡片底","ink":"#hex 主文字","sub":"#hex 次文字","accent":"#hex 主重點色","accent2":"#hex 次重點色","rule":"#hex 線條","grid":false,"radius":0,"serif":false,"prompt":"20字內的文案語氣指示"}
+
+bg 與 ink 對比必須足夠閱讀。只輸出 JSON。`));
+    addStyle(o, descText.slice(0,14));
+  }catch(e){ fail(e.message); }
+}
+
+async function importStyle(file){
+  try{
+    let b64, media;
+    if(/pdf$/i.test(file.name) || file.type==='application/pdf'){
+      toast('讀取 PDF 首頁');
+      const pdfjs = await loadPdfjs();
+      const doc = await pdfjs.getDocument({data:await file.arrayBuffer()}).promise;
+      const page = await doc.getPage(1), vp = page.getViewport({scale:1.6});
+      const cv = document.createElement('canvas'); cv.width=vp.width; cv.height=vp.height;
+      await page.render({canvasContext:cv.getContext('2d'),viewport:vp}).promise;
+      b64 = cv.toDataURL('image/jpeg',.85).split(',')[1]; media='image/jpeg';
+    }else if(/^image\//.test(file.type)){
+      b64 = await fileB64(file); media = file.type==='image/png'?'image/png':'image/jpeg';
+    }else{
+      return fail('風格匯入只支援 PDF 或圖片（PNG / JPG）。PPTX 請先另存成 PDF。');
+    }
+    toast('分析配色中');
+    const sys='你是簡報視覺分析師。只輸出單一 JSON 物件，不要說明文字。';
+    const o = parseJSON(await ask(sys,
+`分析這張簡報畫面，抽取可重複使用的視覺風格。
+
+輸出：
+{"name":"四字以內名稱","desc":"12字內說明","bg":"#hex 背景","surface":"#hex 卡片底","ink":"#hex 主文字","sub":"#hex 次文字","accent":"#hex 主重點色","accent2":"#hex 次重點色","rule":"#hex 線條","grid":布林（是否有可見格線）,"radius":0-16,"serif":布林（標題是否襯線）,"prompt":"20字內文案語氣指示"}
+
+顏色請取畫面實際出現的色票，不要臆測。只輸出 JSON。`, {media,b64}));
+    addStyle(o, '來自 '+file.name.slice(0,12));
+  }catch(e){ fail(e.message); }
+}
+
+function addStyle(o, fallbackDesc){
+  const ns = {id:uid(), name:o.name||'自訂風格', desc:o.desc||fallbackDesc,
+    bg:o.bg||'#101319', surface:o.surface||'#1A1E27', ink:o.ink||'#F0F2F6', sub:o.sub||'#8A93A6',
+    accent:o.accent||'#FF3D7F', accent2:o.accent2||'#00C2CB', rule:o.rule||'#2A303C',
+    grid:!!o.grid, radius:Number(o.radius)||0, serif:!!o.serif, prompt:o.prompt||'語氣自然、具體。'};
+  S.styles=S.styles.concat([ns]); S.styleId=ns.id;
+  saveCustom(); LS.set('styleId',ns.id); saveDraft(); done();
+}
+
+/* ---------- 匯出 ---------- */
+function exportHTML(){
+  const st=curStyle();
+  const body = S.slides.map((s,i)=>`<section class="s">${renderSlide(s,st,i,S.slides.length,false)}</section>`).join('\n');
+  const doc = `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><title>${esc(S.topic||'簡報')}</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600;700&family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@600;700&display=swap" rel="stylesheet">
+<style>*{box-sizing:border-box}body{margin:0;background:#0b0b0f;font-family:'IBM Plex Sans','Noto Sans TC',sans-serif}
+.s{width:1280px;height:720px;position:relative;display:none}.s.on{display:block}
+#stage{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden}
+#wrap{width:1280px;height:720px;transform-origin:center center}
+#hud{position:fixed;bottom:14px;right:18px;color:#8A93A6;font:12px/1 'IBM Plex Mono',monospace;letter-spacing:1px}
+@media print{@page{size:1280px 720px;margin:0}body{background:#fff}#hud{display:none}#stage{position:static}
+#wrap{transform:none!important;width:auto;height:auto}.s{display:block!important;page-break-after:always}}</style></head><body>
+<div id="stage"><div id="wrap">${body}</div></div><div id="hud"></div><script>
+var i=0,S=document.querySelectorAll('.s');
+function show(n){i=Math.max(0,Math.min(S.length-1,n));for(var k=0;k<S.length;k++)S[k].className='s'+(k===i?' on':'');
+document.getElementById('hud').textContent=(i+1)+' / '+S.length+'　← → 翻頁　P 列印';}
+function fit(){var s=Math.min(innerWidth/1280,innerHeight/720)*.94;document.getElementById('wrap').style.transform='scale('+s+')';}
+addEventListener('resize',fit);addEventListener('keydown',function(e){
+if(e.key==='ArrowRight'||e.key===' ')show(i+1);if(e.key==='ArrowLeft')show(i-1);if(e.key==='p'||e.key==='P')print();});
+fit();show(0);<\/script></body></html>`;
+  download((S.topic||'簡報').slice(0,20)+'.html',doc,'text/html;charset=utf-8');
+}
+
+function exportOutline(){
+  const md=['# '+(S.topic||'簡報'),'','對象：'+S.audience+'｜風格：'+curStyle().name+'｜共 '+S.slides.length+' 頁','']
+  .concat(S.slides.map((s,i)=>{
+    const L=['## '+String(i+1).padStart(2,'0')+'. '+s.title+'　`'+LAYOUTS[s.layout]+'`'];
+    if(s.kicker) L.push('','> '+s.kicker);
+    if(s.subtitle) L.push('',s.subtitle);
+    (s.bullets||[]).forEach(b=>L.push('- **'+b.h+'**'+(b.d?'　'+b.d:'')));
+    (s.columns||[]).forEach(c=>{ L.push('','**'+c.h+'**'); (c.items||[]).forEach(it=>L.push('- '+it)); });
+    if(s.stat) L.push('','> '+s.stat.value+' — '+s.stat.label);
+    if(s.quote) L.push('','> '+s.quote.text+'　—— '+(s.quote.by||''));
+    if(s.note) L.push('','講稿：'+s.note);
+    return L.join('\n');
+  })).join('\n\n');
+  download((S.topic||'簡報').slice(0,20)+'-大綱.md',md,'text/markdown;charset=utf-8');
+}
+
+function exportProject(){
+  download((S.topic||'簡報').slice(0,20)+'.slideforge.json',
+    JSON.stringify({v:1,topic:S.topic,audience:S.audience,tone:S.tone,styleId:S.styleId,style:curStyle(),
+      slides:S.slides,materials:S.materials},null,2),'application/json');
+}
+
+async function importProject(file){
+  try{
+    const d=JSON.parse(await file.text());
+    if(!Array.isArray(d.slides)) throw new Error('這不是 Slide Forge 專案檔');
+    S.topic=d.topic||''; S.audience=d.audience||S.audience; S.tone=d.tone||S.tone;
+    S.materials=Array.isArray(d.materials)?d.materials:[];
+    if(d.style && !S.styles.some(s=>s.id===d.style.id)){ S.styles=S.styles.concat([d.style]); saveCustom(); S.styleId=d.style.id; }
+    else if(d.styleId) S.styleId=d.styleId;
+    S.slides=d.slides.map(s=>Object.assign({},s,{id:s.id||uid(),history:[]}));
+    S.cursor=0; S.view='editor'; saveDraft(); done();
+  }catch(e){ fail(e.message||'專案匯入失敗'); }
+}
+
+async function exportPPTX(){
+  toast('打包 PPTX 中');
+  try{
+    const Pptx = (await loadLib('pptx')).lib;
+    const st=curStyle(), pptx=new Pptx();
+    pptx.defineLayout({name:'SF16x9',width:13.333,height:7.5}); pptx.layout='SF16x9';
+    pptx.title = S.topic||'簡報';
+    const hx=c=>String(c||'#000000').replace('#','').toUpperCase();
+    const FD = st.serif?'Georgia':'Microsoft JhengHei', FB='Microsoft JhengHei';
+    const M=0.8, W=13.333-M*2;
+
+    S.slides.forEach((s,idx)=>{
+      const sl=pptx.addSlide();
+      sl.background={color:hx(st.bg)};
+      if(s.note) sl.addNotes(s.note);
+      const ky = s.kicker ? 0.5 : 0;   // 有核心結論就把內容往下推
+      const kick=()=>{ if(s.kicker) sl.addText(s.kicker,
+        {x:M,y:.72,w:W,h:.45,fontSize:15,bold:true,color:hx(st.accent),fontFace:FB,valign:'top'}); };
+      const foot=()=>{
+        sl.addText(String(idx+1).padStart(2,'0')+' / '+String(S.slides.length).padStart(2,'0'),
+          {x:W-1.2+M,y:6.75,w:1.2,h:.3,align:'right',fontSize:10,color:hx(st.sub),fontFace:'Consolas'});
+        if(s.footer) sl.addText(s.footer,{x:M,y:6.75,w:6,h:.3,fontSize:10,color:hx(st.sub),fontFace:'Consolas'});
+      };
+      if(s.layout==='cover'){
+        sl.addShape(pptx.ShapeType.rect,{x:M,y:2.2,w:.96,h:.06,fill:{color:hx(st.accent)}});
+        sl.addText(s.title||'',{x:M,y:2.5,w:W,h:1.6,fontSize:44,bold:true,color:hx(st.ink),fontFace:FD,valign:'top'});
+        if(s.subtitle) sl.addText(s.subtitle,{x:M,y:4.2,w:W*.7,h:.8,fontSize:18,color:hx(st.sub),fontFace:FB});
+      }else if(s.layout==='stat'){
+        kick();
+        sl.addText(s.title||'重點數據',{x:M,y:1.9,w:W,h:.4,fontSize:12,color:hx(st.accent),fontFace:'Consolas',charSpacing:2});
+        sl.addText(String((s.stat&&s.stat.value)||'—'),{x:M,y:2.3,w:W,h:2,fontSize:96,bold:true,color:hx(st.accent),fontFace:FD});
+        sl.addText((s.stat&&s.stat.label)||'',{x:M,y:4.5,w:W*.75,h:.9,fontSize:20,color:hx(st.ink),fontFace:FB});
+        foot();
+      }else if(s.layout==='quote'){
+        kick();
+        sl.addText('“',{x:M,y:1.5,w:1,h:1,fontSize:80,color:hx(st.accent),fontFace:FD});
+        sl.addText((s.quote&&s.quote.text)||s.title||'',{x:M,y:2.5,w:W*.85,h:2,fontSize:30,bold:true,color:hx(st.ink),fontFace:FD});
+        sl.addText((s.quote&&s.quote.by)||'',{x:M,y:4.7,w:W,h:.4,fontSize:14,color:hx(st.sub),fontFace:'Consolas'});
+        foot();
+      }else if(s.layout==='twoCol'){
+        kick();
+        sl.addText(s.title||'',{x:M,y:.75+ky,w:W,h:.7,fontSize:30,bold:true,color:hx(st.ink),fontFace:FD});
+        (s.columns||[]).slice(0,2).forEach((c,ci)=>{
+          const cx=M+ci*(W/2+.2), cw=W/2-.2, cy=1.75+ky;
+          sl.addShape(pptx.ShapeType.rect,{x:cx,y:cy,w:cw,h:4.4-ky,fill:{color:hx(st.surface)},line:{color:hx(st.rule),width:.5}});
+          sl.addShape(pptx.ShapeType.rect,{x:cx,y:cy,w:cw,h:.05,fill:{color:hx(ci?st.accent2:st.accent)}});
+          sl.addText(c.h||'',{x:cx+.3,y:cy+.25,w:cw-.6,h:.5,fontSize:18,bold:true,color:hx(st.ink),fontFace:FD});
+          sl.addText((c.items||[]).map(it=>({text:String(it),options:{breakLine:true}})),
+            {x:cx+.3,y:cy+.85,w:cw-.6,h:3.3-ky,fontSize:14,color:hx(st.sub),fontFace:FB,lineSpacingMultiple:1.5,valign:'top'});
+        });
+        foot();
+      }else{
+        kick();
+        sl.addText(s.title||'',{x:M,y:.75+ky,w:W,h:.8,fontSize:30,bold:true,color:hx(st.ink),fontFace:FD,valign:'top'});
+        sl.addShape(pptx.ShapeType.rect,{x:M,y:1.65+ky,w:.67,h:.04,fill:{color:hx(st.accent)}});
+        const bs=s.bullets||[], two=bs.length>4, per=Math.ceil(bs.length/2);
+        bs.forEach((b,i)=>{
+          const col = two && i>=per ? 1:0, row = two ? i%per : i;
+          const cw = two ? W/2-.25 : W, bx = M+col*(W/2+.25), by = 2.05+ky+row*(two?1.05:1.1);
+          sl.addShape(pptx.ShapeType.rect,{x:bx,y:by+.12,w:.1,h:.1,fill:{color:hx(st.accent)}});
+          sl.addText(b.h||'',{x:bx+.28,y:by,w:cw-.28,h:.42,fontSize:18,bold:true,color:hx(st.ink),fontFace:FD,valign:'top'});
+          if(b.d) sl.addText(b.d,{x:bx+.28,y:by+.42,w:cw-.28,h:.5,fontSize:13,color:hx(st.sub),fontFace:FB,valign:'top'});
+        });
+        foot();
+      }
+    });
+    await pptx.writeFile({fileName:(S.topic||'簡報').slice(0,20)+'.pptx'});
+    done();
+  }catch(e){ fail(e.message||'PPTX 匯出失敗'); }
+}
+
+/* ---------- 演示模式 ---------- */
+let pIdx=0;
+function present(){
+  const st=curStyle(), wrap=document.getElementById('presentWrap');
+  wrap.innerHTML = S.slides.map((s,i)=>
+    `<div class="ps" data-i="${i}" style="width:1280px;height:720px;position:relative;display:none">${renderSlide(s,st,i,S.slides.length,false)}</div>`).join('');
+  document.getElementById('present').classList.add('on');
+  pIdx=S.cursor; pShow(pIdx); pFit();
+}
+function pShow(n){
+  const els=document.querySelectorAll('.ps'); if(!els.length) return;
+  pIdx=Math.max(0,Math.min(els.length-1,n));
+  els.forEach((e,k)=>e.style.display = k===pIdx?'block':'none');
+  document.getElementById('presentHud').textContent=(pIdx+1)+' / '+els.length+'　← → 翻頁　Esc 離開';
+}
+function pFit(){
+  const s=Math.min(innerWidth/1280,innerHeight/720)*.95;
+  document.getElementById('presentWrap').style.transform='scale('+s+')';
+}
+function pClose(){ document.getElementById('present').classList.remove('on'); S.cursor=pIdx; render(); }
+addEventListener('resize',()=>{ pFit(); fitAll(); });
+addEventListener('keydown',e=>{
+  if(document.getElementById('present').classList.contains('on')){
+    if(e.key==='Escape') pClose();
+    if(e.key==='ArrowRight'||e.key===' ') pShow(pIdx+1);
+    if(e.key==='ArrowLeft') pShow(pIdx-1);
+  }
+});
+
+/* ---------- 畫面 ---------- */
+function styleSwatch(s,removable){
+  return `<div class="sw ${s.id===S.styleId?'on':''}">
+    <button class="pick" data-act="style" data-id="${s.id}">
+      <span style="width:40px;height:28px;border-radius:3px;background:${s.bg};border:1px solid ${s.rule};position:relative;flex:0 0 auto;overflow:hidden;display:block">
+        <span style="position:absolute;left:5px;top:6px;width:20px;height:3px;background:${s.accent}"></span>
+        <span style="position:absolute;left:5px;top:13px;width:26px;height:2px;background:${s.ink};opacity:.55"></span>
+        <span style="position:absolute;left:5px;top:18px;width:16px;height:2px;background:${s.ink};opacity:.35"></span>
+      </span>
+      <span style="min-width:0"><span class="nm">${esc(s.name)}</span><span class="ds" style="display:block">${esc(s.desc)}</span></span>
+    </button>
+    ${removable?`<button class="del" data-act="delStyle" data-id="${s.id}" title="移除">×</button>`:''}
+  </div>`;
+}
+function styleBox(){
+  return `<div style="display:grid;gap:8px;margin-bottom:14px">
+    ${S.styles.map(s=>styleSwatch(s,!PRESETS.some(p=>p.id===s.id))).join('')}
+  </div>
+  <div style="border:1px dashed var(--line);border-radius:8px;padding:12px">
+    <div class="lbl">新增風格</div>
+    <input type="text" id="styleDesc" placeholder="想要什麼樣子，例：暖色系、手繪感">
+    <button class="btn sm full" data-act="mkStyle" style="margin-top:8px">調配並加入風格庫</button>
+    <div style="border-top:1px solid var(--line);margin-top:10px;padding-top:10px">
+      <button class="btn sm" data-act="impStyle">從現有簡報擷取風格</button>
+      <div class="hint">丟一份 PDF 或簡報截圖，讀出它的配色存成新風格。PPTX 請先另存成 PDF。</div>
+    </div>
+  </div>`;
+}
+function materialBox(){
+  return `<textarea id="matDraft" placeholder="貼上會議記錄、規格文件、研究筆記，或用下方按鈕上傳 Word / PDF / Excel" style="min-height:78px"></textarea>
+  <div style="display:flex;gap:8px;margin-top:8px">
+    <button class="btn sm" data-act="addMat">加入素材</button>
+    <button class="btn sm" data-act="upMat">上傳檔案</button>
+  </div>
+  ${S.materials.length?`<div style="display:grid;gap:5px;margin-top:10px">${S.materials.map(m=>
+    `<div style="display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:5px;padding:6px 9px;font-size:11.5px">
+      <span class="mono" style="color:var(--cy);font-size:10px">DOC</span>
+      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.name)}</span>
+      <span class="mono" style="color:var(--mute);font-size:10px">${m.text.length}字</span>
+      <button class="del" data-act="delMat" data-id="${m.id}" style="background:none;border:none;color:var(--mute);cursor:pointer">×</button>
+    </div>`).join('')}</div>`:''}`;
+}
+
+function viewHome(){
+  const st=curStyle();
+  const hasModel = S.cfg.provider==='ollama' ? true : !!S.cfg.key;
+  const demo={layout:'bullets',title:'風格預覽',footer:'SLIDE FORGE',
+    bullets:[{h:'版面由資料渲染',d:'文字保持可編輯'},{h:'配色來自風格庫',d:'隨時整份替換'}]};
+  const hasDraft = S.slides.length>0;
+  return `${topbar(false)}
+  <div class="scroll" style="flex:1">
+   <div style="max-width:1120px;margin:0 auto;padding:48px 28px 80px">
+    <h1 style="font-size:clamp(28px,4vw,46px);line-height:1.18;margin:0 0 14px;font-weight:700;letter-spacing:-.5px;max-width:760px">
+      把資料貼進來，直接產出簡報</h1>
+    <p style="color:var(--mute);font-size:15px;line-height:1.7;max-width:620px;margin:0 0 34px">
+      版面在你的瀏覽器裡直接畫出來，不經過圖片，所以每個字都還是字，點下去就能改，
+      改完可以存成 PowerPoint。資料不會離開這台電腦。</p>
+
+    ${S.cfg.provider==='course'
+      ? (S.cfg.key?'':`<div style="border:1px solid var(--cy);background:#0C2224;border-radius:10px;padding:14px 16px;margin-bottom:26px;font-size:13px;line-height:1.65">
+          這場課程已經幫你準備好 AI 額度，你不用申請任何金鑰，只要填一次課程通行碼。
+          <button class="btn sm" data-act="settings" style="margin-left:8px">填通行碼</button></div>`)
+      : (!S.cfg.key&&S.cfg.provider!=='ollama'?`<div style="border:1px solid var(--cy);background:#0C2224;border-radius:10px;padding:14px 16px;margin-bottom:26px;font-size:13px;line-height:1.65">
+          不用金鑰也能用完整功能。按「產生指令」複製一段話，貼到你平常在用的 ChatGPT 或 Gemini，回覆貼回來就能排版、存成 PowerPoint。
+          <div style="margin-top:8px;color:var(--mute);font-size:12px">想省下這道手續，到
+            <button class="btn sm" data-act="settings" style="margin:0 4px">設定</button>填一組金鑰就能在這頁直接生成。</div></div>`:'')}
+
+    <div class="home-grid" style="display:grid;grid-template-columns:1.15fr 1fr;gap:34px;align-items:start">
+      <div class="card">
+        <div class="lbl">要做什麼簡報</div>
+        <textarea id="fBrief" placeholder="會議記錄、需求文件、講稿，或直接寫一句「做一份向量資料庫選型的簡報給主管看」都可以。" style="min-height:190px;font-size:14.5px">${esc(S.brief)}</textarea>
+        <div class="hint">頁數、對象、語氣、風格會從內容判斷，不用先填。</div>
+
+        <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
+          ${hasModel
+            ? `<button class="btn pri full" data-act="brief" ${S.busy?'disabled':''} style="padding:13px 15px;font-size:14px">
+                 ${S.busy?'生成中…':'生成簡報'}</button>
+               <button class="btn" data-act="ownai" title="改用你慣用的 AI">換我的 AI</button>`
+            : `<button class="btn pri full" data-act="ownai" style="padding:13px 15px;font-size:14px">
+                 產生指令</button>`}
+          <button class="btn" data-act="local" title="不呼叫模型，用本地範本開一份骨架">範本</button>
+          <button class="btn" data-act="impProj">開啟</button>
+        </div>
+
+        <button data-act="adv" style="background:none;border:none;color:var(--mute);cursor:pointer;font-size:12px;
+          font-family:inherit;padding:14px 0 0;display:flex;align-items:center;gap:6px">
+          <span class="mono" style="font-size:10px">${S.adv?'▾':'▸'}</span> 想自己指定對象、語氣、頁數</button>
+
+        ${S.adv?`<div style="border-top:1px solid var(--line);margin-top:12px;padding-top:16px">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+            <div class="field"><div class="lbl">對象</div>
+              <input type="text" id="fAud" value="${esc(S.audience)}" placeholder="留空＝自動判斷"></div>
+            <div class="field"><div class="lbl">語氣</div>
+              <input type="text" id="fTone" value="${esc(S.tone)}" placeholder="留空＝自動判斷"></div>
+          </div>
+          <div class="field"><div class="lbl">頁數　${S.pages?S.pages:'自動'}</div>
+            <input type="range" id="fPages" min="0" max="14" value="${S.pages}">
+            <div class="hint">拉到最左邊是自動判斷。</div></div>
+          <div class="field"><div class="lbl">參考素材（另外附加的檔案）</div>${materialBox()}
+            <div class="hint">${S.materials.length?`已載入 ${S.materials.length} 份，共 ${allChunks().length} 個片段`:'上面那個框已經夠用；這裡是要另外附加檔案時才需要'}</div></div>
+        </div>`:''}
+      </div>
+        ${hasDraft?`<button class="btn full" data-act="resume" style="margin-top:10px">繼續上次的 ${S.slides.length} 頁簡報</button>`:''}
+      </div>
+
+      <div>
+        <div class="lbl">風格庫</div>
+        ${styleBox()}
+        <div style="margin-top:20px;border:1px solid var(--line);border-radius:10px;overflow:hidden">
+          <div class="frame"><div class="stage">${renderSlide(demo,st,2,7,false)}</div></div>
+        </div>
+      </div>
+    </div>
+   </div>
+  </div>`;
+}
+
+function topbar(inEditor){
+  const doneN = S.slides.filter(s=>s.status!=='draft').length;
+  return `<div style="display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid var(--line);background:var(--panel);flex:0 0 auto">
+    ${inEditor?`<button class="mono" data-act="home" style="background:none;border:none;color:var(--mute);cursor:pointer;font-size:12px;letter-spacing:1.5px;padding:0">← 專案</button>
+      <div style="font-weight:600;font-size:14px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(S.topic||'未命名簡報')}</div>
+      <div class="mono" style="font-size:11px;color:var(--mute)">${doneN}/${S.slides.length} 已生成</div>`
+     :`<div style="font-size:12.5px;font-weight:600;color:var(--paper)">${S.wizard?'':'Slide Forge'}</div>
+       ${S.wizard?'':`<button class="btn sm" data-act="wizard">照課程步驟操作</button>`}`}
+    <div style="flex:1"></div>
+    ${usage().n?`<span class="mono" style="font-size:11px;color:var(--mute)">今日 ${usage().n} 次</span>`:''}
+    ${inEditor?`<button class="btn sm" data-act="present">演示</button>
+      ${aiReady()?`<button class="btn sm" data-act="regen" ${S.busy?'disabled':''}>重生本頁（1 次）</button>
+      <button class="btn sm" data-act="genAll" ${S.busy?'disabled':''}>逐頁精修（${S.slides.length} 次）</button>`:''}
+      <button class="btn sm pri" data-act="tabExport">匯出</button>`:''}
+    <button class="btn sm" data-act="settings">${S.cfg.key?'設定':'設定金鑰'}</button>
+  </div>`;
+}
+
+function viewEditor(){
+  const st=curStyle(), cur=S.slides[S.cursor];
+  const rail = S.slides.map((s,i)=>`
+    <div style="margin-bottom:10px">
+      <button data-act="go" data-i="${i}" style="width:100%;padding:0;border:2px solid ${i===S.cursor?'var(--mark)':'transparent'};border-radius:5px;overflow:hidden;cursor:pointer;background:none;display:block">
+        <div class="frame"><div class="stage">${renderSlide(s,st,i,S.slides.length,false)}</div></div>
+      </button>
+      <div class="mono" style="display:flex;justify-content:space-between;font-size:10px;color:var(--mute);margin-top:4px">
+        <span>${String(i+1).padStart(2,'0')} ${LAYOUTS[s.layout]}</span>
+        <span style="color:${s.status==='draft'?'var(--mute)':s.status==='edited'?'var(--cy)':'var(--mark)'}">${s.status==='draft'?'草稿':s.status==='edited'?'已改':'已生成'}</span>
+      </div>
+      <div style="display:flex;gap:4px;margin-top:4px">
+        <button class="btn xs" data-act="up" data-i="${i}">↑</button>
+        <button class="btn xs" data-act="down" data-i="${i}">↓</button>
+        <button class="btn xs" data-act="dup" data-i="${i}">複製</button>
+        <button class="btn xs" data-act="del" data-i="${i}">刪</button>
+      </div>
+    </div>`).join('');
+
+  let insp='';
+  if(S.tab==='outline' && cur){
+    insp = `<div class="field"><div class="lbl">這頁的講稿</div>
+        <textarea id="fNote" style="min-height:82px">${esc(cur.note||'')}</textarea></div>
+      <div class="field"><div class="lbl">局部修改指令</div>
+        <textarea id="fIns" style="min-height:70px" placeholder="例：第二點改從成本角度講、語氣再直接一點">${esc(S.instruction)}</textarea>
+        <div class="hint">只改這一頁。</div></div>
+      ${aiReady()
+        ? `<button class="btn pri full" data-act="revise" ${S.busy?'disabled':''}>套用修改</button>`
+        : `<div style="border:1px solid var(--line);border-radius:6px;padding:10px;font-size:11.5px;color:var(--mute);line-height:1.6">
+            要用這個得先在設定填一組金鑰，Gemini 有免費額度。不填也沒關係，直接點文字改就好。
+            <button class="btn sm" data-act="settings" style="margin-top:8px">前往設定</button></div>`}
+      <div class="lbl" style="margin-top:22px">全篇大綱</div>
+      ${S.slides.map((s,i)=>`<button data-act="go" data-i="${i}" style="display:block;width:100%;text-align:left;background:${i===S.cursor?'var(--line)':'transparent'};border:none;border-left:2px solid ${i===S.cursor?'var(--mark)':'var(--line)'};padding:7px 10px;cursor:pointer;color:var(--paper);font-size:12.5px;margin-bottom:2px;line-height:1.45">
+        <span class="mono" style="color:var(--mute);margin-right:7px">${String(i+1).padStart(2,'0')}</span>${esc(s.title)}</button>`).join('')}`;
+  }else if(S.tab==='material'){
+    const hits = cur? retrieve(allChunks(), cur.title+' '+(cur.bullets||[]).map(b=>b.h).join(' ')):[];
+    insp = materialBox()+`<div class="hint" style="margin-top:14px">重新生成某一頁時，會拿那頁的標題去素材裡找最相關的三段。</div>`+
+      (hits.length?`<div class="lbl" style="margin-top:20px">本頁命中片段</div>`+hits.map(h=>
+        `<div style="border:1px solid var(--line);border-radius:6px;padding:10px;margin-bottom:8px">
+          <div class="mono" style="font-size:10px;color:var(--cy);margin-bottom:5px">${esc(h.src)} ／ 相關度 ${(h.score*100).toFixed(0)}%</div>
+          <div style="font-size:11.5px;color:var(--mute);line-height:1.55">${esc(h.text.slice(0,160))}…</div></div>`).join(''):'');
+  }else if(S.tab==='style'){
+    insp = styleBox()+`<div class="hint" style="margin-top:12px">換風格會套用到所有頁面，內容不動。每個風格另外帶一句語氣指示。</div>`;
+  }else{
+    insp = `<div class="field"><div class="lbl">PowerPoint</div>
+        <button class="btn pri full" data-act="pptx" ${S.busy?'disabled':''}>匯出可編輯 PPTX</button>
+        <div class="hint">每個文字方塊在 PowerPoint 裡都能改，講稿放在備忘稿。第一次匯出要等幾秒載入。</div></div>
+      <div class="field"><div class="lbl">簡報網頁</div>
+        <button class="btn full" data-act="html">匯出簡報 HTML</button>
+        <div class="hint">一個檔案，方向鍵翻頁，按 P 印成 PDF。</div></div>
+      <div class="field"><div class="lbl">大綱</div>
+        <button class="btn full" data-act="md">匯出大綱 Markdown</button></div>
+      <div class="field"><div class="lbl">專案</div>
+        <button class="btn full" data-act="expProj">匯出專案 JSON</button>
+        <button class="btn full" data-act="impProj" style="margin-top:8px">匯入專案 JSON</button>
+        <div class="hint">含風格、素材和所有頁面，可以帶到別台電腦接著改。</div></div>`;
+  }
+
+  return `${topbar(true)}
+  <div style="display:flex;flex:1;min-height:0">
+    <div id="rail" class="scroll" style="width:168px;border-right:1px solid var(--line);padding:10px;background:var(--panel);flex:0 0 auto">
+      ${rail}<button class="btn sm full" data-act="add">＋ 新增一頁</button>
+    </div>
+    <div class="scroll" style="flex:1;min-width:0;padding:26px;display:flex;flex-direction:column;align-items:center;gap:14px">
+      <div style="width:100%;max-width:880px;border:1px solid var(--line);border-radius:8px;overflow:hidden;box-shadow:0 18px 50px rgba(0,0,0,.45)">
+        <div class="frame"><div class="stage" id="mainStage">${cur?renderSlide(cur,st,S.cursor,S.slides.length,true):''}</div></div>
+      </div>
+      <div style="width:100%;max-width:880px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <span class="mono" style="font-size:11px;color:var(--mute)">版型</span>
+        ${Object.keys(LAYOUTS).map(k=>`<button class="chip ${cur&&cur.layout===k?'on':''}" data-act="layout" data-k="${k}">${LAYOUTS[k]}</button>`).join('')}
+        <span style="flex:1"></span>
+        <button class="btn sm" data-act="undo" ${cur&&(cur.history||[]).length?'':'disabled'}>復原</button>
+      </div>
+      <div style="width:100%;max-width:880px;font-size:12px;color:var(--mute);line-height:1.6">
+        點畫面上的文字就能改，滑鼠移開就存好了。</div>
+    </div>
+    <div id="insp" style="width:320px;border-left:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;flex:0 0 auto">
+      <div style="display:flex;border-bottom:1px solid var(--line)">
+        ${[['outline','大綱'],['material','素材'],['style','風格'],['export','匯出']].map(([k,v])=>
+          `<button data-act="tab" data-k="${k}" style="flex:1;padding:11px 0;background:none;border:none;cursor:pointer;font-size:12px;font-weight:600;color:${S.tab===k?'var(--paper)':'var(--mute)'};border-bottom:2px solid ${S.tab===k?'var(--mark)':'transparent'}">${v}</button>`).join('')}
+      </div>
+      <div class="scroll" style="flex:1;padding:16px">${insp}</div>
+    </div>
+  </div>`;
+}
+
+function viewOwnAI(){
+  const p=buildPrompt();
+  return `<div class="modal" data-act="closeModal"><div class="box" data-stop="1" style="width:min(720px,100%)">
+    <div style="display:flex;align-items:center;margin-bottom:6px">
+      <div style="font-size:17px;font-weight:700">用你自己的 AI</div><span style="flex:1"></span>
+      <button data-act="closeModal" style="background:none;border:none;color:var(--mute);font-size:20px;cursor:pointer">×</button></div>
+    <div class="hint" style="margin-bottom:16px">複製下面的指令，貼到你平常在用的 ChatGPT、Claude 或 Gemini，再把回覆貼回來就好。</div>
+
+    <div class="lbl">一、複製這段指令</div>
+    <textarea id="promptOut" style="min-height:150px;font-size:12.5px;line-height:1.6">${esc(p)}</textarea>
+    <div style="display:flex;gap:8px;margin:8px 0 20px">
+      <button class="btn sm pri" data-act="copyPrompt">複製指令</button>
+      <button class="btn sm" data-act="editRules">${S.rulesOpen?'收起規範':'調整簡報規範'}</button>
+    </div>
+    ${S.rulesOpen?`<div class="field"><div class="lbl">簡報規範 Rules</div>
+      <textarea id="rulesBox" style="min-height:150px;font-size:12.5px;line-height:1.6">${esc(S.rules||buildRulesText())}</textarea>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn sm" data-act="saveRules">存起來</button>
+        <button class="btn sm" data-act="resetRules">回復預設</button></div>
+      <div class="hint">改完存在這台電腦，之後每次產生指令都會帶上。</div></div>`:''}
+
+    <div class="lbl">二、把回覆貼回這裡</div>
+    <textarea id="pasteBack" placeholder="# 頁標題&#10;> 核心結論&#10;- 條列一&#10;- 條列二" style="min-height:150px;font-size:12.5px;line-height:1.6"></textarea>
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button class="btn pri full" data-act="importPasted">轉成簡報</button>
+    </div>
+    <div class="hint">認得 # 標題、&gt; 核心結論、- 條列這種寫法，粗體標題或編號清單也可以。</div>
+  </div></div>`;
+}
+
+/* ---------- 導引模式：照課綱一步一步走 ---------- */
+const STEPS = [
+  {n:1, t:'選擇情境',      u:'第三單元'},
+  {n:2, t:'準備素材',      u:'第三單元'},
+  {n:3, t:'建立規範',      u:'第二單元'},
+  {n:4, t:'生成大綱',      u:'第三單元'},
+  {n:5, t:'挑選風格',      u:'第一單元'}
+];
+
+function stepBar(){
+  return `<div style="display:flex;gap:0;margin-bottom:30px;flex-wrap:wrap">
+    ${STEPS.map(s=>{
+      const on=s.n===S.step, past=s.n<S.step;
+      return `<button data-act="goStep" data-k="${s.n}" ${s.n>S.step?'disabled':''} style="flex:1;min-width:110px;text-align:left;
+        background:none;border:none;border-top:3px solid ${on?'var(--mark)':past?'var(--cy)':'var(--line)'};
+        padding:12px 12px 0 0;cursor:${s.n<=S.step?'pointer':'default'};font-family:inherit;opacity:${s.n>S.step?.45:1}">
+        <div style="font-size:10.5px;letter-spacing:.5px;color:${on?'var(--mark)':'var(--mute)'}">${'一二三四五'[s.n-1]}　${s.u}</div>
+        <div style="font-size:13.5px;font-weight:600;color:${on?'var(--paper)':'var(--mute)'};margin-top:4px">${s.t}</div>
+      </button>`;}).join('')}
+  </div>`;
+}
+function teach(text){
+  return `<div style="border-left:3px solid var(--cy);background:#0E1A1C;padding:12px 14px;border-radius:0 6px 6px 0;
+    font-size:12.5px;line-height:1.7;color:#9FB6B8;margin-bottom:20px">${text}</div>`;
+}
+function navRow(nextLabel, nextAct, disabled){
+  return `<div style="display:flex;gap:10px;margin-top:24px;align-items:center">
+    ${S.step>1?`<button class="btn" data-act="goStep" data-k="${S.step-1}">返回</button>`:''}
+    <span style="flex:1"></span>
+    ${nextLabel?`<button class="btn pri" data-act="${nextAct}" ${disabled?'disabled':''} style="padding:11px 22px">${nextLabel}</button>`:''}
+  </div>`;
+}
+
+function viewWizard(){
+  const r=rulesObj();
+  let body='';
+
+  if(S.step===1){
+    body = teach('AI 寫字很快，花時間的是後面排版。這裡讓 AI 只管內容，版面交給程式套，產出的每個字都還能改。先挑一個要做的情境。')
+    + `<div style="display:grid;gap:10px">
+      ${Object.keys(SCENARIOS).map(k=>{ const s=SCENARIOS[k], on=S.scenario===k;
+        return `<button data-act="pickScenario" data-k="${k}" style="text-align:left;background:${on?'var(--line)':'transparent'};
+          border:1px solid ${on?'var(--mark)':'var(--line)'};border-radius:8px;padding:16px;cursor:pointer;
+          color:var(--paper);font-family:inherit">
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="font-size:15px;font-weight:700">${s.name}</div>
+            <span class="mono" style="font-size:10px;color:var(--cy);border:1px solid var(--cy);border-radius:3px;padding:2px 5px">${s.unit}</span>
+          </div>
+          <div style="font-size:12.5px;color:var(--mute);margin-top:7px;line-height:1.6">${s.desc}</div>
+          <div style="font-size:12px;color:var(--cy);margin-top:6px">${s.example}</div>
+        </button>`;}).join('')}
+    </div>` + navRow('下一步','toStep2',!S.scenario);
+
+  }else if(S.step===2){
+    const sc=SCENARIOS[S.scenario]||SCENARIOS.own;
+    body = teach(S.scenario==='own'
+      ? '把資料貼進來，或直接拖檔案。Word、PDF、Excel、CSV、純文字都可以。'
+      : '課程的練習資料已經填好，直接用就行。要換成自己手上的東西，拖檔案進來或在框裡改掉，後面步驟一樣。')
+    + `<div id="dropZone" style="border:1.5px dashed var(--line);border-radius:8px;padding:14px;margin-bottom:14px;
+        display:flex;align-items:center;gap:12px;flex-wrap:wrap;transition:border-color .15s,background .15s">
+        <button class="btn sm" data-act="upMatW">選擇檔案</button>
+        <span style="font-size:12.5px;color:var(--mute)">或把檔案拖進來　Word、PDF、Excel、CSV、純文字</span>
+      </div>
+      ${(S.uploads||[]).length?`<div style="display:grid;gap:5px;margin-bottom:14px">
+        ${S.uploads.map((u,i)=>`<div style="display:flex;align-items:center;gap:8px;border:1px solid var(--line);
+          border-radius:5px;padding:6px 9px;font-size:11.5px">
+          <span class="mono" style="color:var(--cy);font-size:10px">已讀取</span>
+          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(u.name)}</span>
+          <span class="mono" style="color:var(--mute);font-size:10px">${u.len} 字</span></div>`).join('')}
+      </div>`:''}
+      <div class="lbl">原始素材</div>
+      <textarea id="wMat" style="min-height:230px;font-size:12.5px;line-height:1.6;font-family:'IBM Plex Mono',monospace">${esc(S.brief)}</textarea>
+      <div style="display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap">
+        ${S.scenario!=='own'?`<button class="btn sm" data-act="resetMat">還原課程範例</button>`:''}
+        <button class="btn sm" data-act="clearMat">清空</button>
+        <span style="flex:1"></span>
+        <span class="mono" id="wMatCount" style="font-size:11px;color:var(--mute)">${(S.brief||'').length} 字</span>
+      </div>
+      <div class="hint">Excel 和 CSV 會先在你的電腦算好合計與排名再交給 AI，免得它自己加總算錯。</div>`
+    + navRow('下一步','toStep3',!(S.brief||'').trim());
+
+  }else if(S.step===3){
+    body = teach('這步是關鍵。把要求寫清楚，AI 才不會回你一堆「顯著提升」這種空話。填完下面會顯示實際會送出去的指令，之後每次生成都自動帶上。')
+    + `<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+        <div class="field"><div class="lbl">角色設定</div>
+          <input type="text" id="rRole" value="${esc(r.role)}"></div>
+        <div class="field"><div class="lbl">目標受眾</div>
+          <input type="text" id="rAud" value="${esc(r.audience)}"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px">
+        <div class="field"><div class="lbl">總頁數</div><input type="number" id="rPages" value="${r.pages}" min="1" max="14"></div>
+        <div class="field"><div class="lbl">標題字數</div><input type="number" id="rTitle" value="${r.titleMax}" min="6" max="30"></div>
+        <div class="field"><div class="lbl">結論字數</div><input type="number" id="rKicker" value="${r.kickerMax}" min="8" max="40"></div>
+        <div class="field"><div class="lbl">條列點數</div><input type="number" id="rCount" value="${r.bulletCount}" min="2" max="6"></div>
+        <div class="field"><div class="lbl">每點字數</div><input type="number" id="rLen" value="${r.bulletMax}" min="10" max="60"></div>
+      </div>
+      <div class="field"><div class="lbl">禁用詞</div>
+        <input type="text" id="rBan" value="${esc(r.banned)}">
+        <div class="hint">用頓號分隔。這一條是要逼 AI 拿數據講話，別用形容詞混過去。</div></div>
+      <label style="display:flex;gap:8px;align-items:center;font-size:13px;margin-bottom:16px;cursor:pointer">
+        <input type="checkbox" id="rUnits" ${r.units?'checked':''} style="width:auto;accent-color:var(--mark)">
+        數據必須標明單位（萬度、%、場、人次、元）</label>
+
+      <div class="lbl">實際會送出去的指令</div>
+      <pre style="background:var(--ink);border:1px solid var(--line);border-radius:6px;padding:14px;font-size:11.5px;
+        line-height:1.7;color:var(--mute);white-space:pre-wrap;font-family:'IBM Plex Mono',monospace;margin:0">${esc(buildRulesText(readRulesForm()||r))}</pre>`
+    + navRow('下一步','toStep4');
+
+  }else if(S.step===4){
+    const hasModel = S.cfg.provider==='ollama' ? true : !!S.cfg.key;
+    body = teach('大綱的格式是每頁一個 # 標題、一句 &gt; 核心結論、幾條 - 要點。拿到之後可以直接在框裡改，'
+      + '不用再另存 txt、也不用從大綱插入投影片，排版這邊會處理掉。')
+    + (hasModel
+      ? `<div style="border:1px solid var(--mark);border-radius:8px;padding:16px;margin-bottom:18px">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+            <span style="font-size:13.5px;font-weight:600">直接產生大綱</span>
+          </div>
+          <button class="btn pri" data-act="genMD" ${S.busy?'disabled':''}>${S.busy?'生成中…':(S.md?'重新生成大綱':'生成大綱')}</button>
+          <span style="font-size:11.5px;color:var(--mute);margin-left:10px">使用 ${esc(S.cfg.model||'')}</span>
+        </div>
+        <details style="margin-bottom:18px">
+          <summary style="cursor:pointer;font-size:12.5px;color:var(--mute);padding:6px 0">或者，複製指令貼到自己的 AI 工具</summary>
+          <textarea id="promptOut" readonly style="min-height:140px;font-size:12px;line-height:1.65;font-family:'IBM Plex Mono',monospace;color:var(--mute);margin-top:8px">${esc(buildPrompt())}</textarea>
+          <button class="btn sm" data-act="copyPrompt" style="margin-top:8px">複製指令</button>
+        </details>`
+      : `<div style="border:1px solid var(--line);border-radius:8px;padding:16px;margin-bottom:18px">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+            <span style="font-size:13.5px;font-weight:600">一、複製這段指令，貼到你的 AI</span>
+          </div>
+          <textarea id="promptOut" readonly style="min-height:170px;font-size:12px;line-height:1.65;font-family:'IBM Plex Mono',monospace;color:var(--mute)">${esc(buildPrompt())}</textarea>
+          <div style="display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap">
+            <button class="btn sm pri" data-act="copyPrompt">複製指令</button>
+            <span style="font-size:11.5px;color:var(--mute)">ChatGPT、Gemini、Claude 都行，免費帳號就夠</span>
+          </div>
+          <div style="border-top:1px solid var(--line);margin-top:12px;padding-top:12px;font-size:12px;color:var(--mute);line-height:1.6">
+            懶得複製貼上的話，申請一組免費的 Gemini 金鑰，之後在這頁按一下就好。
+            <button class="btn sm" data-act="settings" style="margin-left:6px">設定免費金鑰</button></div>
+        </div>`)
+    + `<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+        <span style="font-size:13.5px;font-weight:600">${hasModel?'產出的大綱，可以直接改':'二、把 AI 回覆的內容貼回這裡'}</span>
+      </div>
+      <textarea id="wMD" placeholder="# 頁標題&#10;> 核心結論&#10;- 條列一&#10;- 條列二"
+        style="min-height:230px;font-size:12.5px;line-height:1.7;font-family:'IBM Plex Mono',monospace">${esc(S.md||'')}</textarea>
+      <div class="hint" id="mdHint">貼回來之後可以直接改，確認沒問題再往下。</div>`
+    + navRow('下一步','toStep5',!(S.md||'').trim());
+
+  }else{
+    const st=curStyle();
+    body = teach('風格只影響外觀，換了不會動到內容。也可以丟一份現有簡報的 PDF 或截圖進來，讀出它的配色存成新風格。')
+    + `<div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start">
+        <div>${styleBox()}</div>
+        <div style="border:1px solid var(--line);border-radius:10px;overflow:hidden">
+          <div class="frame"><div class="stage">${renderSlide(
+            {layout:'bullets',title:'風格預覽',kicker:'核心結論會出現在標題上方',footer:'SLIDE FORGE',
+             bullets:[{h:'條列一',d:'補充說明'},{h:'條列二',d:'補充說明'}]},
+            st,1,3,false)}</div></div>
+        </div>
+      </div>`
+    + navRow('完成，產生簡報','finishWizard');
+  }
+
+  return `${topbar(false)}
+  <div class="scroll" style="flex:1">
+    <div style="max-width:900px;margin:0 auto;padding:38px 28px 90px">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+        <div style="font-size:12.5px;color:var(--mute)">AI 生成簡報培力課程</div>
+        <span style="flex:1"></span>
+        <button class="btn sm" data-act="skipWizard">跳過</button>
+      </div>
+      <h1 style="font-size:clamp(24px,3.2vw,34px);line-height:1.25;margin:0 0 26px;font-weight:700;letter-spacing:-.4px">
+        ${S.step===1?'照著五步走，拿到一份能改的簡報':STEPS[S.step-1].t}</h1>
+      ${stepBar()}
+      ${body}
+    </div>
+  </div>`;
+}
+
+function readRulesForm(){
+  const g=x=>{const el=document.getElementById(x);return el?el.value:null;};
+  if(g('rRole')===null) return null;
+  const u=document.getElementById('rUnits');
+  return {role:g('rRole'), audience:g('rAud'), pages:+g('rPages')||3, titleMax:+g('rTitle')||15,
+    kickerMax:+g('rKicker')||20, bulletCount:+g('rCount')||4, bulletMax:+g('rLen')||30,
+    units:u?u.checked:true, banned:g('rBan')||''};
+}
+function saveRulesForm(){
+  const r=readRulesForm(); if(!r) return;
+  LS.set('rulesObj',r); S.rules=buildRulesText(r); LS.set('rules',S.rules);
+  if(r.pages) S.pages=r.pages;
+}
+
+/* 產生課程格式的 Markdown 大綱 */
+async function genMD(){
+  const el=document.getElementById('wMD'); if(el) S.md=el.value;
+  const m=document.getElementById('wMat'); if(m) S.brief=m.value;
+  if(!(S.brief||'').trim()) return fail('還沒有素材，請回到步驟 2。');
+  toast('生成大綱中');
+  try{
+    const sys='你是簡報架構師。只輸出 Markdown，不要任何開場白、結語或 markdown 圍籬。';
+    const out = await ask(sys, buildPrompt());
+    S.md = String(out).replace(/```(markdown)?/gi,'').trim();
+    saveDraft(); done();
+    const el2=document.getElementById('wMD');
+    if(el2){ el2.dispatchEvent(new Event('input',{bubbles:true})); }
+  }catch(e){ fail(e.message); }
+}
+
+function finishWizard(){
+  const el=document.getElementById('wMD'); if(el) S.md=el.value;
+  try{
+    const slides=parseMarkdownDeck(S.md||'');
+    if(!S.topic) S.topic=slides[0].title||'未命名簡報';
+    slides.forEach(s=>s.footer=(S.topic||'').slice(0,24));
+    S.slides=slides; S.pages=slides.length; S.cursor=0;
+    S.wizard=false; S.view='editor'; S.tab='outline'; saveDraft(); render();
+  }catch(e){ fail(e.message); }
+}
+
+function viewSettings(){
+  const c=S.cfg, p=PROVIDERS[c.provider], u=usage();
+  return `<div class="modal" data-act="closeModal"><div class="box" data-stop="1">
+    <div style="display:flex;align-items:center;margin-bottom:18px">
+      <div style="font-size:17px;font-weight:700">模型設定</div><span style="flex:1"></span>
+      <button class="del" data-act="closeModal" style="background:none;border:none;color:var(--mute);font-size:20px;cursor:pointer">×</button></div>
+
+    <div style="border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:18px;font-size:12px;line-height:1.65;color:var(--mute)">
+      金鑰只留在這台電腦，不會傳給這個網站，只會直接送到你選的服務。共用電腦記得用完按「清除金鑰」。</div>
+
+    <div class="lbl">供應商</div>
+    <div style="display:grid;gap:6px;margin-bottom:16px">
+      ${Object.keys(PROVIDERS).filter(k=> k!=='course' || COURSE_ENDPOINT).map(k=>{
+        const q=PROVIDERS[k];
+        return `<button data-act="prov" data-k="${k}" style="display:flex;align-items:center;gap:8px;text-align:left;
+          background:${c.provider===k?'var(--line)':'transparent'};border:1px solid ${c.provider===k?'var(--mark)':'var(--line)'};
+          border-radius:6px;padding:9px 11px;cursor:pointer;color:var(--paper);font-size:13px;font-family:inherit">
+          <span style="flex:1">${q.label}</span>
+          ${q.free?`<span class="mono" style="font-size:10px;color:var(--cy);border:1px solid var(--cy);border-radius:3px;padding:2px 5px">${q.free}</span>`:''}
+        </button>`;}).join('')}
+    </div>
+    <div class="hint" style="margin:-8px 0 16px">${esc(p.note)}${p.keyUrl?` <a href="${p.keyUrl}" target="_blank" rel="noopener" style="color:var(--cy)">申請 / 下載</a>`:''}</div>
+
+    ${c.provider==='course'?`
+    <div class="field"><div class="lbl">課程通行碼</div>
+      <input type="password" id="cKey" value="${esc(c.key)}" placeholder="向課程主辦方索取" autocomplete="off"></div>
+    <div class="field"><div class="lbl">要用哪個 AI</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        ${COURSE_MODELS.map(m=>`<button class="chip ${c.model===m.key?'on':''}" data-act="pickModel" data-k="${m.key}">${m.label}</button>`).join('')}</div>
+      <div class="hint">主辦方可能只開放其中幾個，選到沒開放的會提示你換一個。</div></div>
+    <input type="hidden" id="cBase" value="${esc(c.base)}">
+    <input type="hidden" id="cModel" value="${esc(c.model)}">
+    `:`
+    <div class="field"><div class="lbl">API 金鑰</div>
+      <input type="password" id="cKey" value="${esc(c.key)}" placeholder="${c.provider==='ollama'?'Ollama 不驗證，隨便填一個字':'貼上你的金鑰'}" autocomplete="off"></div>
+
+    <div class="field"><div class="lbl">模型</div>
+      <input type="text" id="cModel" value="${esc(c.model)}" list="modelList">
+      <datalist id="modelList">${(p.models||[]).map(m=>`<option value="${m}">`).join('')}</datalist>
+      ${(p.models||[]).length?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:7px">
+        ${p.models.map(m=>`<button class="chip ${c.model===m?'on':''}" data-act="pickModel" data-k="${m}">${m}</button>`).join('')}</div>`:''}</div>
+
+    <div class="field"><div class="lbl">端點</div>
+      <input type="text" id="cBase" value="${esc(c.base)}"></div>
+    `}
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="field"><div class="lbl">輸出上限（tokens）</div>
+        <input type="number" id="cMax" value="${c.maxTokens}" min="500" max="16000" step="500"></div>
+      <div class="field"><div class="lbl">請求間隔（毫秒）</div>
+        <input type="number" id="cGap" value="${c.gapMs}" min="0" max="30000" step="1000"></div>
+    </div>
+    <div class="hint" style="margin-top:-8px">整份一次生成的輸出比較長，上限建議 6000 以上。間隔是為了避開「每分鐘幾次」的限制，免費額度留 6000 以上，本機 Ollama 填 0。</div>
+
+    <div style="border:1px solid var(--line);border-radius:8px;padding:11px;margin-top:16px;font-size:12px;color:var(--mute)">
+      今天已送出 <span style="color:var(--paper);font-weight:600">${u.n}</span> 次請求
+      <button class="btn sm" data-act="resetUsage" style="float:right;margin-top:-4px">歸零</button>
+      <div class="hint" style="margin-top:6px">這是這台電腦自己數的，方便抓個大概，不是對方的實際計數。</div></div>
+
+    <div style="border:1px solid var(--line);border-radius:8px;padding:11px;margin-top:16px;font-size:12px;color:var(--mute)">
+      外部程式庫（匯出 PPTX、解析 Word/PDF/Excel 需要）
+      <button class="btn sm" data-act="checkLibs" style="float:right;margin-top:-4px">檢查連線</button>
+      <div id="libStatus" style="margin-top:8px;line-height:1.8">${S.libStatus||'還沒檢查。解析檔案出現載入失敗時，按這裡看是哪個來源被擋。'}</div></div>
+
+    <div style="display:flex;gap:8px;margin-top:18px">
+      <button class="btn pri full" data-act="saveCfg">儲存</button>
+      <button class="btn" data-act="clearKey">清除金鑰</button>
+    </div>
+  </div></div>`;
+}
+
+/* ---------- 渲染與縮放 ---------- */
+function fitAll(){
+  document.querySelectorAll('.frame').forEach(f=>{
+    const st=f.querySelector('.stage'); if(!st) return;
+    st.style.transform='scale('+(f.clientWidth/1280)+')';
+  });
+}
+function render(){
+  const app=document.getElementById('app');
+  app.innerHTML = S.view==='editor' ? viewEditor() : (S.wizard ? viewWizard() : viewHome());
+  document.getElementById('layer').innerHTML =
+    (S.modal==='settings'?viewSettings():'') +
+    (S.modal==='ownai'?viewOwnAI():'') +
+    (S.busy?`<div class="toast"><span class="dot"></span>${esc(S.busy)}…</div>`:'') +
+    (S.err?`<div class="toast bad"><span>${esc(S.err)}</span><button data-act="clearErr" style="background:none;border:none;color:var(--mute);cursor:pointer;font-size:16px">×</button></div>`:'');
+  fitAll();
+}
+
+/* ---------- 事件 ---------- */
+document.addEventListener('click', async e=>{
+  const t = e.target.closest('[data-act]'); if(!t) return;
+  if(t.dataset.act==='closeModal' && e.target.closest('[data-stop]')) return;
+  const a=t.dataset.act, i=+t.dataset.i, id=t.dataset.id;
+
+  const map = {
+    home:()=>{ S.view='home'; S.wizard=false; render(); },
+    resume:()=>{ S.view='editor'; render(); },
+    settings:()=>{ S.modal='settings'; render(); },
+    closeModal:()=>{ S.modal=null; render(); },
+    clearErr:()=>{ S.err=null; render(); },
+    tab:()=>{ S.tab=t.dataset.k; render(); },
+    tabExport:()=>{ S.tab='export'; render(); },
+    go:()=>{ S.cursor=i; render(); },
+    style:()=>{ S.styleId=id; LS.set('styleId',id); saveDraft(); render(); },
+    delStyle:()=>{ S.styles=S.styles.filter(s=>s.id!==id); if(S.styleId===id) S.styleId=S.styles[0].id; saveCustom(); render(); },
+    layout:()=>{ pushHistory(S.cursor); S.slides[S.cursor].layout=t.dataset.k; S.slides[S.cursor].status='edited'; saveDraft(); render(); },
+    up:()=>{ if(i>0){ const a2=S.slides; [a2[i-1],a2[i]]=[a2[i],a2[i-1]]; S.cursor=i-1; saveDraft(); render(); } },
+    down:()=>{ if(i<S.slides.length-1){ const a2=S.slides; [a2[i+1],a2[i]]=[a2[i],a2[i+1]]; S.cursor=i+1; saveDraft(); render(); } },
+    dup:()=>{ S.slides.splice(i+1,0,Object.assign(JSON.parse(JSON.stringify(S.slides[i])),{id:uid(),history:[]})); saveDraft(); render(); },
+    del:()=>{ if(S.slides.length<=1) return fail('至少要保留一頁。可以先「新增一頁」再刪掉這頁。');
+      S.slides.splice(i,1); S.cursor=Math.max(0,Math.min(S.cursor,S.slides.length-1)); saveDraft(); render(); },
+    add:()=>{ S.slides.push({id:uid(),layout:'bullets',title:'新頁面',bullets:[{h:'要點',d:''}],note:'',footer:(S.topic||'').slice(0,24),status:'draft',history:[]}); S.cursor=S.slides.length-1; saveDraft(); render(); },
+    undo:()=>{ const s=S.slides[S.cursor], h=(s.history||[]); const prev=h.pop(); if(prev){ Object.assign(s,prev,{history:h}); saveDraft(); render(); } },
+    present:()=>present(),
+    goStep:()=>{ syncStep(); const n=+t.dataset.k; if(n<=S.step){ S.step=n; render(); } },
+    pickScenario:()=>{
+      const k=t.dataset.k, sc=SCENARIOS[k];
+      S.scenario=k;
+      if(!S.brief.trim() || S.brief===((SCENARIOS[S.prevScenario]||{}).material||'')) S.brief=sc.material||'';
+      S.prevScenario=k;
+      if(sc.audience||sc.pages){
+        const r=rulesObj();
+        if(sc.audience) r.audience=sc.audience;
+        if(sc.pages) r.pages=sc.pages;
+        LS.set('rulesObj',r);
+      }
+      S.plan = sc.outline||'';
+      render();
+    },
+    resetMat:()=>{ S.brief=(SCENARIOS[S.scenario]||{}).material||''; S.uploads=[]; render(); },
+    clearMat:()=>{ S.brief=''; S.uploads=[]; render(); },
+    upMatW:()=>pickFile(ACCEPT, f=>handleUpload(f)),
+    toStep2:()=>{ S.step=2; render(); },
+    toStep3:()=>{ const m=document.getElementById('wMat'); if(m) S.brief=m.value; S.step=3; render(); },
+    toStep4:()=>{ saveRulesForm(); S.step=4; render(); },
+    toStep5:()=>{ const e2=document.getElementById('wMD'); if(e2) S.md=e2.value; S.step=5; render(); },
+    genMD:()=>genMD(),
+    finishWizard:()=>finishWizard(),
+    skipWizard:()=>{ syncStep(); S.wizard=false; LS.set('wizardDone',true); render(); },
+    wizard:()=>{ S.wizard=true; S.view='home'; S.step=1; LS.set('wizardDone',false); render(); },
+    brief:()=>{ readHome(); genFromBrief(); },
+    ownai:()=>{ syncStep(); readHome(); S.modal='ownai'; render(); },
+    copyPrompt:()=>{
+      const el=document.getElementById('promptOut'); if(!el) return;
+      const say=m=>{ t.textContent=m; setTimeout(()=>{ if(t) t.textContent='複製指令'; },1800); };
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(el.value).then(()=>say('已複製 ✓')).catch(()=>fallback());
+      } else fallback();
+      function fallback(){
+        el.removeAttribute('readonly'); el.focus(); el.select(); el.setSelectionRange(0,999999);
+        let ok=false; try{ ok=document.execCommand('copy'); }catch(e){}
+        el.setAttribute('readonly','readonly');
+        say(ok?'已複製 ✓':'已全選，請按 Ctrl+C');
+      }
+    },
+    editRules:()=>{ const b=document.getElementById('rulesBox'); if(b) S.rules=b.value;
+      S.rulesOpen=!S.rulesOpen; render(); },
+    saveRules:()=>{ const b=document.getElementById('rulesBox'); if(b){ S.rules=b.value; LS.set('rules',S.rules); }
+      S.rulesOpen=false; render(); },
+    resetRules:()=>{ S.rules=buildRulesText(); LS.set('rules',S.rules); render(); },
+    importPasted:()=>importPasted(),
+    adv:()=>{ readHome(); S.adv=!S.adv; render(); },
+    outline:()=>{ readHome(); genOutline(); },
+    local:()=>{ readHome(); genLocal(); },
+    mode:()=>{ S.economy = t.dataset.k==='eco'; LS.set('economy',S.economy); render(); },
+    prov:()=>{ readCfgFields(); const k=t.dataset.k, q=PROVIDERS[k];
+      S.cfg.provider=k; S.cfg.base=q.base; S.cfg.model=q.model||S.cfg.model;
+      S.cfg.gapMs = k==='ollama' ? 0 : (q.rpm ? Math.ceil(62000/q.rpm) : 2000);
+      LS.set('cfg',S.cfg); render(); },
+    pickModel:()=>{ readCfgFields(); S.cfg.model=t.dataset.k; LS.set('cfg',S.cfg); render(); },
+    resetUsage:()=>{ LS.set('usage',{d:today(),n:0}); render(); },
+    checkLibs:async()=>{
+      const box=document.getElementById('libStatus'); if(!box) return;
+      box.innerHTML='檢查中…';
+      const names={pptx:'PPTX 匯出',mammoth:'Word 解析',xlsx:'Excel 解析',pdfjs:'PDF 解析'};
+      const out=[];
+      for(const k of Object.keys(LIBS)){
+        try{
+          const {url}=await loadLib(k);
+          const host=/^\.\//.test(url)?'本機 lib 資料夾':url.replace(/^https:\/\//,'').split('/')[0];
+          out.push(`<span style="color:var(--cy)">✓</span> ${names[k]}　<span class="mono" style="font-size:10.5px">${host}</span>`);
+        }catch(e){
+          out.push(`<span style="color:var(--warn)">✗</span> ${names[k]}　全部來源都連不到`);
+        }
+        box.innerHTML=out.join('<br>');
+      }
+      const bad=out.filter(x=>x.includes('✗')).length;
+      out.push(bad
+        ? `<div style="margin-top:8px;color:var(--warn);line-height:1.6">把對應的 .js 檔下載後放進與本頁面同一層的 <code>lib</code> 資料夾即可離線使用，詳見說明文件。</div>`
+        : `<div style="margin-top:8px;color:var(--cy)">全部正常。</div>`);
+      box.innerHTML=out.join('<br>');
+      S.libStatus=box.innerHTML;
+    },
+    genAll:()=>genAll(),
+    regen:()=>genOne(S.cursor).catch(err=>fail(err.message)),
+    revise:()=>{ readEditorFields(); reviseOne(); },
+    mkStyle:()=>{ const el=document.getElementById('styleDesc'); createStyle(el?el.value:''); },
+    impStyle:()=>pickFile('.pdf,.png,.jpg,.jpeg',importStyle),
+    addMat:()=>{ const el=document.getElementById('matDraft'); if(el&&el.value.trim()){ S.materials.push({id:uid(),name:'貼上的文字 '+(S.materials.length+1),text:el.value.trim()}); saveDraft(); render(); } },
+    upMat:()=>pickFile(ACCEPT, async f=>{
+      toast('讀取 '+f.name);
+      try{ const text=await parseUpload(f); S.materials.push({id:uid(),name:f.name,text}); saveDraft(); done(); }
+      catch(e){ fail(e.message); } }),
+    delMat:()=>{ S.materials=S.materials.filter(m=>m.id!==id); saveDraft(); render(); },
+    pptx:()=>exportPPTX(), html:()=>exportHTML(), md:()=>exportOutline(),
+    expProj:()=>exportProject(), impProj:()=>pickFile('.json',importProject),
+    saveCfg:()=>{
+      const g=x=>{const el=document.getElementById(x);return el?el.value:'';};
+      S.cfg=Object.assign({},S.cfg,{key:g('cKey').trim(),base:g('cBase').trim(),model:g('cModel').trim(),
+        maxTokens:+g('cMax')||2000, gapMs:Math.max(0,+g('cGap')||0)});
+      LS.set('cfg',S.cfg); S.modal=null; render();
+    },
+    clearKey:()=>{ S.cfg.key=''; LS.set('cfg',S.cfg); render(); }
+  };
+  if(map[a]) map[a]();
+});
+
+/* 表單即時同步 */
+document.addEventListener('input', e=>{
+  if(e.target.id==='fBrief'){ S.brief=e.target.value; return; }
+  if(e.target.id==='wMat'){
+    S.brief=e.target.value;
+    const b=document.querySelector('[data-act="toStep3"]'); if(b) b.disabled=!S.brief.trim();
+    const c=document.querySelector('#wMatCount'); if(c) c.textContent=S.brief.length+' 字';
+    return;
+  }
+  if(e.target.id==='wMD'){
+    S.md=e.target.value;
+    const ok=S.md.trim()?previewParse(S.md):null;
+    const b=document.querySelector('[data-act="toStep5"]');
+    if(b) b.disabled=!(ok&&ok.ok);
+    const h=document.getElementById('mdHint');
+    if(h){
+      if(!ok) h.innerHTML='貼回來之後可以直接改，確認沒問題再往下。';
+      else if(ok.ok && ok.thin) h.innerHTML='<span style="color:var(--warn)">只抓到一頁，也沒有條列，'+
+        '是不是只貼到一半？要繼續也可以，後面再補。</span>';
+      else if(ok.ok) h.innerHTML='<span style="color:var(--cy)">讀到 '+ok.n+' 頁：'+
+        ok.titles.map(x=>esc(x)).join('、')+(ok.n>3?' …':'')+'</span>';
+      else h.innerHTML='<span style="color:var(--warn)">'+esc(ok.msg)+'</span>';
+    }
+    return;
+  }
+  if(e.target.id==='fPages'){ S.pages=+e.target.value;
+    const l=e.target.parentElement.querySelector('.lbl'); if(l) l.textContent='頁數　'+(S.pages||'自動'); }
+});
+function readHome(){
+  const g=x=>{const el=document.getElementById(x);return el?el.value:null;};
+  if(g('fBrief')!==null) S.brief=g('fBrief');
+  if(g('fTopic')!==null) S.topic=g('fTopic');
+  if(g('fAud')!==null) S.audience=g('fAud');
+  if(g('fTone')!==null) S.tone=g('fTone');
+  const p=g('fPages'); if(p!==null) S.pages=+p;
+}
+function syncStep(){
+  const m=document.getElementById('wMat'); if(m) S.brief=m.value;
+  const d2=document.getElementById('wMD'); if(d2) S.md=d2.value;
+  if(document.getElementById('rRole')) saveRulesForm();
+}
+function readCfgFields(){
+  const g=x=>{const el=document.getElementById(x);return el?el.value:null;};
+  if(g('cKey')!==null) S.cfg.key=g('cKey').trim();
+  if(g('cBase')!==null) S.cfg.base=g('cBase').trim();
+  if(g('cModel')!==null) S.cfg.model=g('cModel').trim();
+  if(g('cMax')!==null) S.cfg.maxTokens=+g('cMax')||S.cfg.maxTokens;
+  if(g('cGap')!==null) S.cfg.gapMs=Math.max(0,+g('cGap')||0);
+}
+function readEditorFields(){
+  const n=document.getElementById('fNote'), ins=document.getElementById('fIns');
+  if(n && S.slides[S.cursor]) S.slides[S.cursor].note=n.value;
+  if(ins) S.instruction=ins.value;
+}
+document.addEventListener('focusout', e=>{
+  if(e.target.id==='fTopic'||e.target.id==='fAud'||e.target.id==='fTone'){ readHome(); saveDraft(); return; }
+  if(e.target.id==='fNote'||e.target.id==='fIns'){ readEditorFields(); saveDraft(); return; }
+  const ed=e.target.closest('[data-edit]');
+  if(ed && ed.isContentEditable){
+    applyEdit(S.cursor, ed.dataset.edit, ed.innerText.trim());
+    render();
+  }
+});
+document.getElementById('present').addEventListener('click', e=>{ if(e.target.id==='present') pClose(); });
+
+/* 拖放上傳 */
+['dragenter','dragover'].forEach(ev=>document.addEventListener(ev, e=>{
+  const z=document.getElementById('dropZone'); if(!z) return;
+  e.preventDefault(); z.style.borderColor='var(--mark)'; z.style.background='#1A1420';
+}));
+document.addEventListener('dragleave', e=>{
+  const z=document.getElementById('dropZone'); if(!z||e.relatedTarget) return;
+  z.style.borderColor='var(--line)'; z.style.background='transparent';
+});
+document.addEventListener('drop', e=>{
+  const z=document.getElementById('dropZone'); if(!z) return;
+  e.preventDefault();
+  z.style.borderColor='var(--line)'; z.style.background='transparent';
+  const f=e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+  if(f) handleUpload(f);
+});
+
+render();
+</script>
+</body>
+</html>
