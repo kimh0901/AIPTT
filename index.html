@@ -132,8 +132,8 @@ const PROVIDERS = {
     base:COURSE_ENDPOINT, model:'gemini', models:COURSE_MODELS.map(m=>m.key), keyUrl:'', rpm:0,
     note:'由課程主辦方統一提供模型額度，你只要填通行碼就能用。想換模型直接在上面選。'},
   gemini:{label:'Google Gemini', proto:'gemini', free:'免費額度', vision:true,
-    base:'https://generativelanguage.googleapis.com', model:'gemini-2.5-flash-lite',
-    models:['gemini-2.5-flash-lite','gemini-2.5-flash','gemini-2.5-pro'],
+    base:'https://generativelanguage.googleapis.com', model:'gemini-3.5-flash-lite',
+    models:['gemini-3.5-flash-lite','gemini-3.5-flash','gemini-3.1-flash-lite'],
     keyUrl:'https://aistudio.google.com/apikey', rpm:10,
     note:'申請金鑰不用信用卡。Flash-Lite 的每日次數最寬鬆，Flash 次之，Pro 在免費額度下幾乎只夠試用。Google 會調整額度，實際數字以官方頁面為準。'},
   openrouter:{label:'OpenRouter 免費模型', proto:'openai', free:'免費額度', vision:false,
@@ -172,6 +172,7 @@ let S = {
   topic:'', audience:'', tone:'', pages:0, instruction:'', brief:'', adv:false, rulesOpen:false,
   rules: LS.get('rules',null),
   wizard: LS.get('wizardDone',false)?false:true, step:1, scenario:null, md:'', plan:'', uploads:[],
+  styleTab:'manual', msName:'', msBg:'#0E2233', msInk:'#EAF4FA', msAccent:'#3FD2C7', msRadius:0, msSerif:false,
   styleId: LS.get('styleId','blueprint'),
   styles: PRESETS.concat(LS.get('customStyles',[])),
   materials: [], slides: [],
@@ -182,6 +183,11 @@ let S = {
       : {provider:'gemini',base:PROVIDERS.gemini.base,model:PROVIDERS.gemini.model,key:'',maxTokens:6000,gapMs:7000},
     LS.get('cfg',{}))
 };
+/* Google 已停止讓新使用者呼叫 2.5 Flash-Lite。保留金鑰與其他設定，只移轉舊模型名稱。 */
+if(S.cfg.provider==='gemini' && /^(models\/)?gemini-2\.5-flash-lite$/.test(S.cfg.model||'')){
+  S.cfg.model=PROVIDERS.gemini.model;
+  LS.set('cfg',S.cfg);
+}
 
 /* 用量計數：讓人知道今天還剩多少免費額度 */
 function today(){ return new Date().toISOString().slice(0,10); }
@@ -204,6 +210,13 @@ const saveCustom = ()=> LS.set('customStyles', S.styles.filter(s=>!PRESETS.some(
 const saveDraft = ()=> LS.set('draft',{topic:S.topic,audience:S.audience,tone:S.tone,styleId:S.styleId,
   slides:S.slides,materials:S.materials,brief:S.brief,md:S.md,step:S.step,scenario:S.scenario,plan:S.plan,uploads:S.uploads});
 function aiReady(){ return S.cfg.provider==='ollama' ? true : !!S.cfg.key; }
+function modelLabel(){
+  const m=S.cfg.model||'';
+  if(S.cfg.provider==='course'){
+    const f=COURSE_MODELS.find(x=>x.key===m); return f?f.label:m;
+  }
+  return m;
+}
 
 function set(patch,skipRender){ Object.assign(S,patch); if(!skipRender) render(); }
 function toast(msg){ S.busy=msg; render(); }
@@ -280,8 +293,8 @@ async function askOnce(system, text, img){
     pick = d => (((d.choices||[])[0]||{}).message||{}).content||'';
 
   }else{
-    url = c.base.replace(/\/$/,'')+'/v1beta/models/'+encodeURIComponent(c.model)+':generateContent?key='+encodeURIComponent(c.key);
-    headers = {'content-type':'application/json'};
+    url = c.base.replace(/\/$/,'')+'/v1beta/models/'+encodeURIComponent(c.model)+':generateContent';
+    headers = {'content-type':'application/json','x-goog-api-key':c.key};
     const parts = img ? [{inline_data:{mime_type:img.media,data:img.b64}},{text}] : [{text}];
     body = {systemInstruction:{parts:[{text:system}]},contents:[{role:'user',parts}],
       generationConfig:{maxOutputTokens:mt,temperature:0.7}};
@@ -296,6 +309,29 @@ async function askOnce(system, text, img){
     if(proto==='proxy') throw new Error('連不上課程伺服器，請確認網路，或稍後再試。');
     throw new Error('連不上這個服務。可能是網路問題，也可能是它不允許瀏覽器直接呼叫。');
   }
+  /* Gemini 會不定期調整可用模型；舊瀏覽器也可能在 localStorage 留著已下架的模型名稱。
+     收到 404 時，先依這把金鑰實際看得到的 models 清單選一個文字生成模型，再自動重試一次。 */
+  if(!res.ok && res.status===404 && proto==='gemini'){
+    try{
+      const listUrl=c.base.replace(/\/$/,'')+'/v1beta/models?pageSize=1000';
+      const listRes=await fetch(listUrl,{headers:{'x-goog-api-key':c.key}});
+      if(listRes.ok){
+        const data=await listRes.json();
+        const available=(data.models||[])
+          .filter(m=>(m.supportedGenerationMethods||[]).includes('generateContent'))
+          .map(m=>String(m.name||'').replace(/^models\//,''))
+          .filter(Boolean);
+        const preferred=[...(PROVIDERS.gemini.models||[]),...available.filter(m=>/flash/i.test(m)),...available];
+        const next=preferred.find(m=>m!==c.model && available.includes(m));
+        if(next){
+          c.model=next;
+          LS.set('cfg',c);
+          url=c.base.replace(/\/$/,'')+'/v1beta/models/'+encodeURIComponent(next)+':generateContent';
+          res=await fetch(url,{method:'POST',headers,body:JSON.stringify(body)});
+        }
+      }
+    }catch(e){ /* 保留原始 Gemini 回應，交給下面的錯誤處理顯示 */ }
+  }
   if(!res.ok){
     let detail='';
     try{ const j=await res.json();
@@ -309,7 +345,7 @@ async function askOnce(system, text, img){
       e.retryable = true; throw e;
     }
     if(res.status>=500){ const e=mkErr('對方的服務暫時出問題（HTTP '+res.status+'）。'); e.retryable=true; throw e; }
-    if(res.status===404) throw mkErr('找不到「'+c.model+'」這個模型。免費模型的名單常在變，到設定換一個試試。');
+    if(res.status===404) throw mkErr('Google 找不到「'+c.model+'」或這把金鑰無法使用該模型。已嘗試自動尋找可用模型仍失敗。'+(detail?'（'+detail+'）':''));
     throw mkErr('模型回應失敗 HTTP '+res.status+(detail?'：'+detail:''));
   }
   const out = pick(await res.json());
@@ -883,7 +919,7 @@ async function handleUpload(file, done2){
   try{
     const text=await parseUpload(file);
     S.brief = (S.brief||'').trim() ? (S.brief.trim()+'\n\n'+text) : text;
-    S.uploads=(S.uploads||[]).concat([{name:file.name, len:text.length}]);
+    S.uploads=(S.uploads||[]).concat([{id:uid(), name:file.name, len:text.length, text}]);
     saveDraft(); done(); if(done2) done2();
   }catch(e){
     fail(e.message);
@@ -1360,18 +1396,51 @@ function styleSwatch(s,removable){
     ${removable?`<button class="del" data-act="delStyle" data-id="${s.id}" title="移除">×</button>`:''}
   </div>`;
 }
+/* 從兩個顏色推出中間色，讓自訂風格只要挑三個顏色就好 */
+function hexToRgb(h){ h=String(h).replace('#',''); if(h.length===3) h=h.split('').map(c=>c+c).join('');
+  return [parseInt(h.slice(0,2),16)||0, parseInt(h.slice(2,4),16)||0, parseInt(h.slice(4,6),16)||0]; }
+function mix(a,b,t){ const A=hexToRgb(a),B=hexToRgb(b);
+  return '#'+[0,1,2].map(i=>Math.round(A[i]+(B[i]-A[i])*t).toString(16).padStart(2,'0')).join(''); }
+
 function styleBox(){
+  const ai=aiReady();
   return `<div style="display:grid;gap:8px;margin-bottom:14px">
     ${S.styles.map(s=>styleSwatch(s,!PRESETS.some(p=>p.id===s.id))).join('')}
   </div>
   <div style="border:1px dashed var(--line);border-radius:8px;padding:12px">
-    <div class="lbl">新增風格</div>
-    <input type="text" id="styleDesc" placeholder="想要什麼樣子，例：暖色系、手繪感">
-    <button class="btn sm full" data-act="mkStyle" style="margin-top:8px">調配並加入風格庫</button>
-    <div style="border-top:1px solid var(--line);margin-top:10px;padding-top:10px">
-      <button class="btn sm" data-act="impStyle">從現有簡報擷取風格</button>
-      <div class="hint">丟一份 PDF 或簡報截圖，讀出它的配色存成新風格。PPTX 請先另存成 PDF。</div>
+    <div style="display:flex;gap:6px;margin-bottom:10px">
+      <button class="chip ${S.styleTab!=='ai'?'on':''}" data-act="styleTab" data-k="manual">自己選顏色</button>
+      <button class="chip ${S.styleTab==='ai'?'on':''}" data-act="styleTab" data-k="ai">交給 AI</button>
     </div>
+
+    ${S.styleTab==='ai' ? (ai ? `
+      <input type="text" id="styleDesc" placeholder="想要什麼樣子，例：暖色系、手繪感">
+      <button class="btn sm full" data-act="mkStyle" style="margin-top:8px">調配並加入風格庫</button>
+      <div style="border-top:1px solid var(--line);margin-top:10px;padding-top:10px">
+        <button class="btn sm" data-act="impStyle">從現有簡報擷取風格</button>
+        <div class="hint">丟一份 PDF 或簡報截圖，讀出它的配色存成新風格。PPTX 請先另存成 PDF。</div>
+      </div>`
+    : `<div style="font-size:12px;color:var(--mute);line-height:1.7">
+        這兩個功能要讀圖或請 AI 配色，得先在設定填一組金鑰（Gemini 有免費額度，而且看得懂圖）。
+        <div style="margin-top:8px"><button class="btn sm" data-act="settings">前往設定</button></div>
+        <div style="margin-top:8px">不想申請的話，切到左邊「自己選顏色」一樣能做出新風格。</div>
+      </div>`)
+    : `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <label style="font-size:11.5px;color:var(--mute)">名稱
+          <input type="text" id="msName" value="${esc(S.msName||'')}" placeholder="例：科室藍" style="margin-top:5px"></label>
+        <label style="font-size:11.5px;color:var(--mute)">圓角
+          <input type="number" id="msRadius" value="${S.msRadius==null?0:S.msRadius}" min="0" max="16" style="margin-top:5px"></label>
+      </div>
+      <div style="display:flex;gap:14px;margin-top:12px;flex-wrap:wrap">
+        ${[['msBg','背景','#0E2233'],['msInk','文字','#EAF4FA'],['msAccent','重點','#3FD2C7']]
+          .map(([id,label,def])=>`<label style="font-size:11.5px;color:var(--mute);display:flex;align-items:center;gap:6px">
+            ${label}<input type="color" id="${id}" value="${esc(S[id]||def)}"
+              style="width:38px;height:28px;padding:2px;border:1px solid var(--line);border-radius:5px;background:none;cursor:pointer"></label>`).join('')}
+        <label style="font-size:11.5px;color:var(--mute);display:flex;align-items:center;gap:6px">
+          <input type="checkbox" id="msSerif" ${S.msSerif?'checked':''} style="width:auto;accent-color:var(--mark)">標題用襯線字</label>
+      </div>
+      <button class="btn sm full" data-act="mkManual" style="margin-top:12px">加入風格庫</button>
+      <div class="hint">只要挑三個顏色，其餘的深淺會自動配好。</div>`}
   </div>`;
 }
 function materialBox(){
@@ -1661,11 +1730,14 @@ function viewWizard(){
         <span style="font-size:12.5px;color:var(--mute)">或把檔案拖進來　Word、PDF、Excel、CSV、純文字</span>
       </div>
       ${(S.uploads||[]).length?`<div style="display:grid;gap:5px;margin-bottom:14px">
-        ${S.uploads.map((u,i)=>`<div style="display:flex;align-items:center;gap:8px;border:1px solid var(--line);
+        ${S.uploads.map(u=>`<div style="display:flex;align-items:center;gap:8px;border:1px solid var(--line);
           border-radius:5px;padding:6px 9px;font-size:11.5px">
           <span class="mono" style="color:var(--cy);font-size:10px">已讀取</span>
           <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(u.name)}</span>
-          <span class="mono" style="color:var(--mute);font-size:10px">${u.len} 字</span></div>`).join('')}
+          <span class="mono" style="color:var(--mute);font-size:10px">${u.len} 字</span>
+          <button data-act="delUpload" data-id="${u.id}" title="移除這個檔案"
+            style="background:none;border:none;color:var(--mute);cursor:pointer;font-size:15px;line-height:1;padding:0 2px">×</button>
+        </div>`).join('')}
       </div>`:''}
       <div class="lbl">原始素材</div>
       <textarea id="wMat" style="min-height:230px;font-size:12.5px;line-height:1.6;font-family:'IBM Plex Mono',monospace">${esc(S.brief)}</textarea>
@@ -1715,7 +1787,8 @@ function viewWizard(){
             <span style="font-size:13.5px;font-weight:600">直接產生大綱</span>
           </div>
           <button class="btn pri" data-act="genMD" ${S.busy?'disabled':''}>${S.busy?'生成中…':(S.md?'重新生成大綱':'生成大綱')}</button>
-          <span style="font-size:11.5px;color:var(--mute);margin-left:10px">使用 ${esc(S.cfg.model||'')}</span>
+          <span style="font-size:11.5px;color:var(--mute);margin-left:10px">目前用 ${esc(modelLabel())}</span>
+          <button class="btn sm" data-act="settings" style="margin-left:6px">換模型</button>
         </div>
         <details style="margin-bottom:18px">
           <summary style="cursor:pointer;font-size:12.5px;color:var(--mute);padding:6px 0">或者，複製指令貼到自己的 AI 工具</summary>
@@ -1946,7 +2019,17 @@ document.addEventListener('click', async e=>{
       render();
     },
     resetMat:()=>{ S.brief=(SCENARIOS[S.scenario]||{}).material||''; S.uploads=[]; render(); },
-    clearMat:()=>{ S.brief=''; S.uploads=[]; render(); },
+    clearMat:()=>{ S.brief=''; S.uploads=[]; saveDraft(); render(); },
+    delUpload:()=>{
+      const u=(S.uploads||[]).find(x=>x.id===id); if(!u) return;
+      const cur=document.getElementById('wMat'); if(cur) S.brief=cur.value;
+      if(u.text && S.brief.includes(u.text)){
+        S.brief=S.brief.replace(u.text,'').replace(/\n{3,}/g,'\n\n').trim();
+      }else{
+        fail('這個檔案的內容已經被你改過，沒辦法自動抓出來，請直接在下面的框裡刪掉。');
+      }
+      S.uploads=S.uploads.filter(x=>x.id!==u.id); saveDraft(); render();
+    },
     upMatW:()=>pickFile(ACCEPT, f=>handleUpload(f)),
     toStep2:()=>{ S.step=2; render(); },
     toStep3:()=>{ const m=document.getElementById('wMat'); if(m) S.brief=m.value; S.step=3; render(); },
@@ -2012,6 +2095,19 @@ document.addEventListener('click', async e=>{
     genAll:()=>genAll(),
     regen:()=>genOne(S.cursor).catch(err=>fail(err.message)),
     revise:()=>{ readEditorFields(); reviseOne(); },
+    styleTab:()=>{ readManual(); S.styleTab=t.dataset.k; render(); },
+    mkManual:()=>{
+      readManual();
+      const bg=S.msBg||'#0E2233', ink=S.msInk||'#EAF4FA', accent=S.msAccent||'#3FD2C7';
+      const ns={ id:uid(), name:(S.msName||'').trim()||'自訂風格', desc:'自己選的配色',
+        bg, ink, accent, accent2:accent,
+        surface:mix(bg,ink,.07), sub:mix(bg,ink,.55), rule:mix(bg,ink,.2),
+        grid:false, radius:Number(S.msRadius)||0, serif:!!S.msSerif,
+        prompt:'語氣自然、具體。' };
+      S.styles=S.styles.concat([ns]); S.styleId=ns.id;
+      saveCustom(); LS.set('styleId',ns.id); saveDraft();
+      S.msName=''; render();
+    },
     mkStyle:()=>{ const el=document.getElementById('styleDesc'); createStyle(el?el.value:''); },
     impStyle:()=>pickFile('.pdf,.png,.jpg,.jpeg',importStyle),
     addMat:()=>{ const el=document.getElementById('matDraft'); if(el&&el.value.trim()){ S.materials.push({id:uid(),name:'貼上的文字 '+(S.materials.length+1),text:el.value.trim()}); saveDraft(); render(); } },
@@ -2073,6 +2169,15 @@ function syncStep(){
   const m=document.getElementById('wMat'); if(m) S.brief=m.value;
   const d2=document.getElementById('wMD'); if(d2) S.md=d2.value;
   if(document.getElementById('rRole')) saveRulesForm();
+}
+function readManual(){
+  const g=x=>{const el=document.getElementById(x);return el?el.value:null;};
+  if(g('msName')!==null) S.msName=g('msName');
+  if(g('msBg')!==null) S.msBg=g('msBg');
+  if(g('msInk')!==null) S.msInk=g('msInk');
+  if(g('msAccent')!==null) S.msAccent=g('msAccent');
+  if(g('msRadius')!==null) S.msRadius=g('msRadius');
+  const c=document.getElementById('msSerif'); if(c) S.msSerif=c.checked;
 }
 function readCfgFields(){
   const g=x=>{const el=document.getElementById(x);return el?el.value:null;};
