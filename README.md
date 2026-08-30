@@ -1,27 +1,72 @@
-# lib 資料夾（選用）
+# AI 生成簡報實作平台
 
-平台預設從網路載入下列程式庫。**一般情況這個資料夾可以留空。**
+搭配「AI 生成簡報培力課程」使用的線上工具。照五個步驟操作，把手上的資料變成一份**文字全部可編輯**的 PowerPoint。
 
-如果貴單位的網路擋掉 jsdelivr、unpkg 與 cdnjs，把對應的檔案放進這個資料夾，平台就會改讀本機的，完全不連外。
+不用安裝、不用註冊、不用付費。所有資料都留在使用者自己的瀏覽器裡。
 
-## 要放哪些檔案
+## 線上使用
 
-只需要放你會用到的功能所對應的檔案。
+部署後網址會是：`https://你的帳號.github.io/你的repo名稱/`
 
-| 檔案 | 對應功能 | 下載網址 |
+## 操作流程
+
+| 步驟 | 對應課程 | 做什麼 |
 |---|---|---|
-| `pptxgen.bundle.js` | 匯出 PowerPoint | https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js |
-| `mammoth.browser.min.js` | 解析 Word | https://cdn.jsdelivr.net/npm/mammoth@1.9.0/mammoth.browser.min.js |
-| `xlsx.full.min.js` | 解析 Excel | https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js |
-| `pdf.min.js` | 解析 PDF、擷取風格 | https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js |
-| `pdf.worker.min.js` | 同上（必須一起放） | https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js |
+| 1 選擇情境 | 第三單元 | 定期更新型、臨時交辦型，或自己的題目 |
+| 2 準備素材 | 第三單元 | 拖入 Word / PDF / Excel / CSV，或直接貼上文字 |
+| 3 建立規範 Rules | 第二單元 | 填角色、受眾、頁數、字數上限、禁用詞 |
+| 4 取得大綱 | 第三單元 | 複製指令到自己的 AI，把回覆貼回來 |
+| 5 選擇風格 | 第一單元 | 六種風格擇一 |
 
-用一台能連外的電腦開啟網址，按 Ctrl+S 另存新檔，檔名保持原樣。
+走完進編輯區，點文字就能改，按一下匯出 PPTX。
 
-## 確認有沒有生效
+## 部署到 GitHub Pages
 
-平台右上角「設定」→ 最下面「外部程式庫」→ 按「檢查連線」。成功時會顯示來源是「本機 lib 資料夾」。
+1. 把這個資料夾的內容上傳到一個 **Public** repo
+2. Settings → Pages → Source 選 **Deploy from a branch**
+3. Branch 選 `main`、資料夾選 `/ (root)`，按 Save
+4. 等一到三分鐘，網址會出現在同一頁
 
-## 注意
+`.nojekyll` 這個空檔案要一起上傳，否則 GitHub 可能會忽略某些檔案。
 
-用 `file://` 直接雙擊開啟頁面時，瀏覽器可能不允許讀取同資料夾的 js 檔。請改從 GitHub Pages、內部網站，或本機的 `python -m http.server` 開啟。
+## 需要 API 金鑰嗎
+
+不需要。第四步是複製指令到自己慣用的 ChatGPT、Gemini 或 Claude，再把回覆貼回來。
+
+如果想在平台上直接按一下生成，可以到「設定」填一組 **Google Gemini 免費金鑰**（aistudio.google.com/apikey，不用信用卡）。金鑰只存在填寫者自己的瀏覽器，不會傳到這個網站的主機。
+
+## AI 圖表怎麼用
+
+原本五步課堂流程與大綱格式不變。完成大綱並進入編輯器後：
+
+1. 在素材步驟上傳 Excel／CSV，或貼上以 `|` 分隔、第一列為欄位名稱的資料表
+2. 在右側「大綱」面板按「在本頁後加入圖表」
+3. 有設定 API 金鑰時，可讓 AI 選擇資料表、分類欄、數值欄與圖表類型
+4. 沒有金鑰時，可複製圖表任務到 ChatGPT、Gemini 或 Claude，再把 JSON 貼回；也可直接用第一個數值欄建立圖表
+5. 圖表會插在目前頁面的後面，不會改寫或刪除原本的大綱頁面
+
+AI 只負責判斷圖表用途與寫標題；數值由瀏覽器從原始表格讀取、排序和繪製。支援柱狀圖、橫條圖、折線圖與圓環圖，匯出的 PowerPoint 圖表與內嵌資料都可以繼續編輯。
+
+## 檔案說明
+
+```
+index.html    平台本體，整個應用就是這一個檔案
+.nojekyll     讓 GitHub Pages 原樣提供檔案
+lib/          選用：外部程式庫離線備份，見 lib/README.md
+```
+
+## 內網環境
+
+匯出 PPTX 與解析 Word / PDF / Excel 需要載入外部程式庫。平台會依序嘗試 jsdelivr、unpkg、cdnjs，若全部被擋，把程式庫放進 `lib/` 即可離線使用，詳見 `lib/README.md`。
+
+課程主流程（選情境、貼素材、設定規範、生成大綱、選風格、編輯、匯出 HTML）完全不需要連外。
+
+## 隱私
+
+- 素材、規範、簡報內容都只存在使用者的瀏覽器 localStorage
+- 沒有後端、沒有資料庫、沒有任何追蹤
+- 使用者若自行設定 API 金鑰，金鑰只會直接送到他選擇的模型服務
+
+## 測試狀態
+
+匯出與解析功能以實際程式庫做過端對端驗證：PPTX 產出後解壓縮確認為可編輯文字框、講稿寫入備忘稿；HTML 匯出可獨立開啟並翻頁；Excel 解析的合計與排名數值正確；專案 JSON 匯出後可完整還原。
