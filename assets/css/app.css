@@ -1,0 +1,151 @@
+
+:root{
+  --ink:#0D1016; --panel:#171C26; --line:#465166; --paper:#F5F7FA;
+  --mute:#B8C2D1; --mark:#FF5A8F; --cy:#31DDD4; --warn:#FFC35C;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; background:var(--ink); color:var(--paper);
+  font-family:'IBM Plex Sans','Noto Sans TC',system-ui,-apple-system,sans-serif;
+  font-size:16px;line-height:1.55;-webkit-font-smoothing:antialiased; overflow:hidden;
+}
+#app{height:100%;display:flex;flex-direction:column}
+.mono{font-family:'IBM Plex Mono',monospace}
+button{font-family:inherit}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-thumb{background:#2A3140;border-radius:5px}
+::-webkit-scrollbar-track{background:transparent}
+:focus-visible{outline:3px solid var(--cy);outline-offset:3px}
+
+.btn{font-size:15px;font-weight:600;min-height:44px;padding:10px 16px;border-radius:7px;cursor:pointer;
+  border:1px solid var(--line);background:transparent;color:var(--mute);letter-spacing:.2px;white-space:nowrap;
+  transition:background .15s,border-color .15s,color .15s}
+.btn:hover:not(:disabled){color:var(--paper);border-color:#748198;background:#202735}
+.btn.pri{background:var(--mark);color:#1A0710;border-color:var(--mark)}
+.btn.pri:hover:not(:disabled){filter:brightness(1.08);color:#1A0710}
+.btn.sm{font-size:14px;min-height:38px;padding:7px 11px}
+.btn.xs{font-size:12.5px;min-height:34px;padding:5px 0;flex:1;border-radius:4px}
+.btn.full{width:100%}
+.btn:disabled{opacity:.38;cursor:not-allowed;filter:saturate(.35)}
+
+.lbl{font-size:13.5px;font-weight:600;letter-spacing:.8px;color:var(--mute);margin-bottom:8px;
+  font-family:'IBM Plex Mono',monospace}
+.hint{font-size:13.5px;color:var(--mute);margin-top:8px;line-height:1.7}
+.field{margin-bottom:18px}
+input[type=text],input[type=password],input[type=number],textarea,select{
+  width:100%;min-height:46px;background:var(--ink);border:2px solid var(--line);border-radius:7px;padding:11px 13px;
+  color:var(--paper);font-size:16px;font-family:inherit;outline:none}
+textarea{resize:vertical;line-height:1.6}
+input:focus,textarea:focus,select:focus{border-color:var(--cy);box-shadow:0 0 0 2px rgba(49,221,212,.2)}
+input[type=range]{width:100%;accent-color:var(--mark)}
+
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:26px}
+.scroll{overflow-y:auto;min-height:0}
+
+.sw{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:8px;padding:10px;background:transparent}
+.sw.on{border-color:var(--mark);background:var(--line)}
+.sw .pick{display:flex;gap:8px;align-items:center;flex:1;min-width:0;background:none;border:none;padding:0;cursor:pointer;text-align:left}
+.sw .nm{font-size:15px;font-weight:700;color:var(--paper)}
+.sw .ds{font-size:13px;color:var(--mute);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sw .del{background:none;border:none;color:var(--mute);cursor:pointer;font-size:15px;line-height:1;padding:0 2px}
+.chip{border:1px solid var(--line);background:transparent;color:var(--mute);font-size:13.5px;min-height:36px;padding:7px 10px;border-radius:5px;cursor:pointer}
+.chip.on{background:var(--mark);border-color:var(--mark);color:#1A0710;font-weight:700}
+
+.frame{width:100%;aspect-ratio:16/9;position:relative;overflow:hidden}
+.stage{width:1280px;height:720px;position:absolute;top:0;left:0;transform-origin:top left}
+[data-edit]{outline:none}
+[contenteditable=true]{cursor:text}
+[contenteditable=true]:hover{box-shadow:inset 0 0 0 1px rgba(255,61,127,.35)}
+[contenteditable=true]:focus{box-shadow:inset 0 0 0 1px var(--mark)}
+[data-edit][data-placeholder]:empty::before{content:attr(data-placeholder);color:currentColor;opacity:.45}
+
+.toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:var(--panel);
+  border:2px solid var(--mark);border-radius:8px;padding:12px 18px;font-size:15px;display:flex;gap:10px;
+  align-items:center;z-index:80;max-width:min(560px,92vw);line-height:1.5}
+.toast.bad{background:#2A1520}
+.dot{width:7px;height:7px;border-radius:4px;background:var(--mark);flex:0 0 auto;animation:p 1s ease-in-out infinite}
+@keyframes p{50%{opacity:.25}}
+.modal{position:fixed;inset:0;background:rgba(5,7,11,.78);z-index:90;display:flex;align-items:center;
+  justify-content:center;padding:20px}
+.modal .box{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:24px;
+  width:min(520px,100%);max-height:88vh;overflow-y:auto}
+
+#present{position:fixed;inset:0;background:#000;z-index:100;display:none;align-items:center;justify-content:center}
+#present.on{display:flex}
+#presentWrap{transform-origin:center center}
+#presentHud{position:fixed;bottom:14px;right:18px;color:#66707f;font:12px/1 'IBM Plex Mono',monospace;letter-spacing:1px}
+
+@media (max-width:900px){
+  .home-grid{grid-template-columns:1fr!important}
+  .rules-grid,.rules-top-grid,.chart-form-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+  .wizard-wrap{padding:28px 20px 60px!important}
+  .editor-shell{flex-direction:column;overflow-x:hidden;overflow-y:auto}
+  #rail{
+    display:flex!important;width:100%!important;min-height:196px;max-height:196px;
+    overflow-x:auto!important;overflow-y:hidden!important;border-right:0!important;
+    border-bottom:1px solid var(--line);gap:10px;padding:12px!important
+  }
+  #rail .rail-item{flex:0 0 172px;margin-bottom:0!important}
+  #rail .rail-add{flex:0 0 150px;width:150px!important;align-self:center}
+  .editor-canvas{flex:0 0 auto!important;overflow:visible!important;padding:16px!important}
+  #insp{
+    display:flex!important;width:100%!important;min-height:520px;max-height:none;
+    border-left:0!important;border-top:1px solid var(--line);flex:0 0 auto!important
+  }
+}
+@media (max-width:560px){
+  .rules-grid,.rules-top-grid,.chart-form-grid,.chart-summary-grid,.chart-style-grid{grid-template-columns:1fr!important}
+  .wizard-wrap{padding:22px 14px 48px!important}
+  #rail{min-height:184px;max-height:184px}
+  #rail .rail-item{flex-basis:158px}
+  .editor-canvas{padding:12px!important}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+/* Editor viewport: preserve the slide's aspect ratio; scroll controls instead of shrinking it. */
+.editor-shell,.editor-canvas,#insp,.wizard-style-grid>div{min-width:0}
+/* 窄側欄使用單欄卡片，不能沿用寬視窗的雙欄與固定縮圖寬度。 */
+#insp .chart-style-grid{grid-template-columns:minmax(0,1fr)!important;width:100%;min-width:0}
+#insp .chart-style-grid>button{grid-template-columns:64px minmax(0,1fr)!important;min-width:0;max-width:100%;width:100%;white-space:normal;box-sizing:border-box}
+#insp .chart-style-grid>button>span{min-width:0;overflow-wrap:anywhere}
+#insp .chart-style-grid b{white-space:normal;line-height:1.45}
+/* 圖表使用模板實際分配的高度；來源由共同頁尾顯示，避免重複壓到 Logo。 */
+.template-chart-preview>.numeric-chart-preview{height:100%!important;min-height:0;box-sizing:border-box}
+.template-chart-preview>.numeric-chart-preview>svg{height:calc(100% - 28px)!important;min-height:0}
+.template-chart-preview>.numeric-chart-preview>.chart-source{display:none}
+.editor-canvas{overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+.editor-canvas>*{flex-shrink:0}
+.editor-preview-card .frame{flex-shrink:0}
+#insp>.scroll{overflow:auto;scrollbar-gutter:stable;overscroll-behavior:contain}
+#insp>div:first-child{flex-shrink:0;overflow-x:auto}
+select,input,textarea{max-width:100%;box-sizing:border-box}
+.scroll,.modal .box,.wizard-preview-nav{scrollbar-width:auto;scrollbar-color:#718096 #18202c}
+.chart-dialog .box{max-height:calc(100dvh - 32px);overflow:auto;scrollbar-gutter:stable;padding:24px}
+.chart-dialog .chart-summary-grid>div{background:linear-gradient(145deg,#162d3c,#171e2a);border-radius:12px!important;border-color:#365268!important}
+.chart-dialog .chart-summary-grid b{font-size:20px;line-height:1.45;margin-top:5px}
+.chart-dialog label{min-width:0}
+.chart-dialog select,.chart-dialog input{width:100%;min-height:44px;font-size:16px}
+#chartResolvedDetail{padding:12px 14px;border-left:3px solid var(--cy);background:#10252b;border-radius:6px;overflow-wrap:anywhere}
+.wizard-style-grid{min-width:0}
+.app-toolbar{flex-wrap:wrap}
+.app-toolbar>*{flex-shrink:0;white-space:nowrap}
+.app-toolbar>div[style*="max-width"]{min-width:0;flex:1 1 140px}
+.wizard-preview-nav .chip{max-width:220px;overflow:hidden;text-overflow:ellipsis}
+@media(max-width:1100px){
+ .editor-shell{flex-direction:column;overflow-y:auto;overflow-x:hidden;scrollbar-gutter:stable}
+ #rail{display:flex!important;width:100%!important;min-height:184px;max-height:184px;overflow-x:auto!important;overflow-y:hidden!important;border-right:0!important;gap:10px}
+ #rail .rail-item{flex:0 0 158px;margin-bottom:0!important}
+ #rail .rail-add{flex:0 0 150px;width:150px!important;align-self:center}
+ .editor-canvas{flex:0 0 auto!important;overflow:visible!important;padding:16px!important}
+ #insp{width:100%!important;min-height:360px;max-height:none;flex:0 0 auto!important;border-left:0!important;border-top:1px solid var(--line)}
+ #insp>.scroll{max-height:65dvh;flex:none!important}
+ .wizard-style-grid{grid-template-columns:minmax(0,1fr)!important}
+}
+@media(max-width:560px){
+ .modal{padding:8px}
+ .chart-dialog .box{padding:16px;max-height:calc(100dvh - 16px)}
+ .chart-dialog .chart-summary-grid,.chart-dialog .chart-form-grid{grid-template-columns:minmax(0,1fr)!important}
+ .chart-dialog label[style*="120px"]{grid-template-columns:minmax(0,1fr)!important}
+ .editor-preview-card [style*="minmax(230px"]{grid-template-columns:minmax(0,1fr)!important}
+}
