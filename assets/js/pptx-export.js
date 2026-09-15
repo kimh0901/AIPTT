@@ -125,7 +125,14 @@ function htmlSink(W,H,editable){
           `font-family:${face((ro&&ro.fontFace)||o.fontFace)}'Microsoft JhengHei','Noto Sans TC',sans-serif">${esc(text)}</span>`;
       };
       const inner=runs.map(r=>span(r.text,r.options,(r.options&&r.options.edit)||(runs.length===1?o.edit:''))).join('');
-      parts.push(`<div style="position:absolute;${box(o)};display:flex;flex-direction:column;overflow:hidden;box-sizing:border-box;`+
+      /* PowerPoint 的文字框預設不裁切，放不下就直接溢出到框外。預覽如果一律
+         overflow:hidden，畫面上乾乾淨淨、匯出後才發現疊字。排版檢查已經判定
+         這一框放不下時，預覽也照樣讓它溢出，兩邊看到的是同一件事。 */
+      const spills=Number(o.needH)>Number(o.h)+.015;
+      /* 編輯畫面上把溢出的框標起來，免得被當成工具把版面排壞了。
+         這個標記只存在預覽，不會出現在匯出檔。 */
+      const spillMark=(spills&&editable)?'box-shadow:inset 0 0 0 1px rgba(255,150,80,.65);':'';
+      parts.push(`<div title="${spills?'此文字框放不下，匯出後會溢出到框外':''}" style="position:absolute;${box(o)};${spillMark}display:flex;flex-direction:column;overflow:${spills?'visible':'hidden'};box-sizing:border-box;`+
         `justify-content:${o.valign==='mid'?'center':o.valign==='bottom'?'flex-end':'flex-start'};`+
         `align-items:stretch">${inner}</div>`);
     },
@@ -165,6 +172,35 @@ function addContentFlowPptx(sink,chart,box,style){
   });
 }
 
+/* 量一段文字在指定寬度與字級下實際需要的高度。
+   layout-safety.js 的 measuredTextHeight 是預覽、分頁與匯出共用的同一套量測，
+   這裡以它為準；它還沒載入時退回粗估，只在極端情況下才會用到。 */
+function templateTextNeed(text,o){
+  if(typeof measuredTextHeight==='function')return measuredTextHeight(text,o);
+  const pt=Number(o.fontSize)||18,w=Math.max(.2,Number(o.w)||1);
+  let units=0;for(const ch of String(text==null?'':text))units+=/[⺀-鿿豈-﫿＀-｠]/.test(ch)?1:.55;
+  return Math.max(1,Math.ceil(units*(pt/72)/w))*(pt/72)*1.35;
+}
+/* 一列之內，標題與補充說明各要多高。
+   舊版寫死「標題佔 44%（沒有說明時 90%）」，不看內容實際需要多少：
+   一行的標題照樣吃掉 44%，四行的說明只分到剩下的一半，樣板的小型文字框
+   （列高不到 0.9 吋）因此一定溢出，壓到下一條。改成先量再分配，
+   兩個框都留在這一列原本的矩形內，不會移出樣板給的內容區。 */
+function templateRowSplit(head,detail,rowH,innerW,headSize,detailSize,rhythm){
+  const avail=Math.max(.30,rowH-.08),inner=.04;
+  const headWant=templateTextNeed(head||'',{fontSize:headSize,w:innerW,bold:true,...(rhythm||{})});
+  if(!String(detail||'').trim())return {headH:Math.max(.22,Math.min(avail,headWant||avail)),detailH:0,inner};
+  const detailWant=templateTextNeed(detail,{fontSize:detailSize,w:innerW,...(rhythm||{})});
+  let headH,detailH;
+  if(headWant+detailWant+inner<=avail){headH=Math.max(.22,headWant);detailH=Math.max(.18,detailWant);}
+  else{
+    const k=Math.max(0,avail-inner)/Math.max(.01,headWant+detailWant);
+    headH=Math.max(.22,headWant*k);detailH=Math.max(.18,avail-inner-headH);
+  }
+  headH=Math.min(headH,Math.max(.20,avail-inner-.14));
+  detailH=Math.max(.14,Math.min(detailH,avail-inner-headH));
+  return {headH,detailH,inner};
+}
 function templateHasNativePageNumber(layout){
   const t=S.pptTemplate;
   return !!(t&&t.canMergeMasters&&(t.layouts||[]).some(l=>
@@ -175,6 +211,7 @@ function originalTemplateSlideContent(sink,s,idx,layout,st,pptx){
   const t=S.pptTemplate, W=t.width, H=t.height, th=templateTheme(st,layout), hx=c=>String(c||'#000000').replace('#','').toUpperCase();
   const sourceLabel=slideSourceFooter(s), sourceReserve=sourceLabel ? 0.24 : 0;
   const custom=s.textStyle?slideTextStyle(s):null;
+  const nativeReadable=t.canMergeMasters&&!t.designMode&&!(custom&&custom.bodySizeSet);
   const titleFont=custom?pptFontFamily(custom,st):th.titleFont, bodyFont=custom?pptFontFamily(custom,st):th.bodyFont;
   /* 母片自己的標題級距優先。舊版用 Math.max(固定下限, 母片值)，會把母片設定的
      24～28pt 標題硬放大成 35pt，等於沒有真的沿用母片。 */
@@ -185,7 +222,7 @@ function originalTemplateSlideContent(sink,s,idx,layout,st,pptx){
   const deckTitleSize=deckTitlePt(st);
   const titleSize=(custom&&custom.titleSizeSet)?Math.max(18,custom.titleSize)
     :(s.layout==='cover'?Math.round(deckTitleSize*1.15):deckTitleSize);
-  const bodySize=Math.max(16,(custom&&custom.bodySizeSet)?custom.bodySize:th.bodySize);
+  const bodySize=Math.max(nativeReadable?20:16,(custom&&custom.bodySizeSet)?custom.bodySize:th.bodySize);
   const titleInk=hx(custom&&custom.titleColor||th.ink), bodyInk=hx(custom&&custom.bodyColor||th.sub), subInk=hx(th.sub);
   const align=custom&&custom.align||'left', titleBold=custom?!!custom.titleBold:true,
     bodyBold=custom?!!custom.bodyBold:false, bodyItalic=custom?!!custom.bodyItalic:false;
@@ -248,7 +285,7 @@ function originalTemplateSlideContent(sink,s,idx,layout,st,pptx){
   const accent=(box,color)=>sink.rect({x:box.x,y:box.y,w:Math.min(.72,box.w*.12),h:.055,
     fill:{color:hx(color||th.accent)},line:{color:hx(color||th.accent),transparency:100}});
   const addTitle=(text,box)=>sink.text(text||'',{edit:'title',placeholder:'輸入這一頁的標題',...(box||title),...titleRhythm,fontFace:titleFont,
-    fontSize:fitFontSize(text,box||title,titleSize,{min:16}),bold:titleBold,
+    fontSize:fitFontSize(text,box||title,titleSize,{min:nativeReadable&&s.layout==='cover'?32:16}),bold:titleBold,
     italic:!!(custom&&custom.titleItalic),color:titleInk,align,margin:0,valign:'mid',fit:'shrink'});
   const addKicker=box=>{
     if(!s.kicker) return box;
@@ -264,11 +301,15 @@ function originalTemplateSlideContent(sink,s,idx,layout,st,pptx){
     const coverTitle=dbox?Object.assign({},dbox.title)
       :templateRect(layout,['ctrTitle','title'],0,{x:W*.11,y:H*.34,w:W*.78,h:H*.24});
     accent({x:coverTitle.x,y:Math.max(.18,coverTitle.y-.3),w:coverTitle.w,h:.06});
-    sink.text(s.kicker||'',{edit:'kicker',placeholder:'加入核心結論',x:coverTitle.x,y:Math.max(.12,coverTitle.y-.72),w:coverTitle.w,h:.3,...bodyRhythm,
+    sink.text(s.kicker||'',{edit:'kicker',placeholder:'加入核心結論',x:coverTitle.x,y:Math.max(.12,coverTitle.y-.72),w:coverTitle.w,h:nativeReadable?.42:.3,...bodyRhythm,
       fontFace:bodyFont,fontSize:Math.max(16,bodySize-1),bold:true,color:hx(th.accent),margin:0});
-    addTitle(s.title,coverTitle);
     const sub=(dbox&&dbox.bodies[0])?Object.assign({},dbox.bodies[0])
       :templateRect(layout,['subTitle','body','obj'],0,{x:coverTitle.x,y:coverTitle.y+coverTitle.h+.16,w:coverTitle.w*.82,h:H*.16});
+    // Native title slides often leave a large gap before the subtitle. Use that
+    // gap for a wrapped title instead of shrinking it to a single line.
+    if(nativeReadable&&sub.y>coverTitle.y+coverTitle.h+.3)
+      coverTitle.h=Math.max(coverTitle.h,Math.min(H*.32,sub.y-coverTitle.y-.2));
+    addTitle(s.title,coverTitle);
     sink.text(s.subtitle||'',{edit:'subtitle',placeholder:'輸入副標題',...sub,...bodyRhythm,fontFace:bodyFont,
       fontSize:fitFontSize(s.subtitle,sub,bodySize,{min:12}),bold:bodyBold,italic:bodyItalic,
       color:subInk,align,margin:0,valign:'top',fit:'shrink'});
@@ -300,8 +341,8 @@ function originalTemplateSlideContent(sink,s,idx,layout,st,pptx){
     if(s.chart.type==='content'){
       addContentFlowPptx(sink,s.chart,chartBox,{surface:th.surface,ink:th.ink,sub:th.sub,accent:th.accent,accent2:th.accent2,font:bodyFont});
     }else{
-      const type=safeChartType(s.chart), labels=(s.chart.labels||[]).slice(0,10);
-      const data=(s.chart.series||[]).slice(0,type==='doughnut'?1:2).map(one=>({name:chartUnitName(one),labels,
+      const type=safeChartType(s.chart), labels=(s.chart.labels||[]).slice();
+      const data=(s.chart.series||[]).slice().map(one=>({name:chartUnitName(one),labels,
         values:(one.values||[]).slice(0,labels.length).map(pptChartValue)}));
       const chartType=type==='line'?pptx.ChartType.line:type==='doughnut'?pptx.ChartType.doughnut:pptx.ChartType.bar;
       sink.chart(chartType,data,{...chartBox,barDir:type==='bar'?'bar':'col',showTitle:false,showLegend:data.length>1,legendPos:'b',
@@ -384,7 +425,10 @@ function originalTemplateSlideContent(sink,s,idx,layout,st,pptx){
       items.forEach((v,j)=>{
         const y=itemTop+j*rowH;
         sink.rect({x:box.x,y:y+.13,w:.075,h:.075,fill:{color:hx(color)},line:{color:hx(color),transparency:100}});
-        const iBox={x:box.x+.2,y,w:box.w-.2,h:Math.min(rowH,.62)};
+        /* 每一項的框高照實際需要給，上限是這一列的高度。
+           舊版一律 0.62 吋，兩行以上的項目會溢出、壓到下一項。 */
+        const iNeed=templateTextNeed(String(v),{fontSize:bodySize,w:box.w-.2,...bodyRhythm});
+        const iBox={x:box.x+.2,y,w:box.w-.2,h:Math.max(.30,Math.min(rowH,Math.max(.62,iNeed)))};
         sink.text(String(v),{edit:'c:'+i+':items:'+j,...iBox,...bodyRhythm,fontFace:bodyFont,fontSize:fitFontSize(v,iBox,bodySize,{min:10}),
           color:j?subInk:bodyInk,bold:bodyBold,italic:bodyItalic,align,margin:0,valign:'top'});
       });
@@ -398,9 +442,11 @@ function originalTemplateSlideContent(sink,s,idx,layout,st,pptx){
     items.forEach((b,i)=>{
       const col=Math.floor(i/rows), row=i%rows, rowH=content.h/Math.max(1,rows), x=content.x+col*(colW+gap), y=content.y+row*rowH;
       sink.text(String(i+1).padStart(2,'0'),{x,y:y+.05,w:.42,h:.28,fontFace:bodyFont,fontSize:Math.max(12,bodySize-4),bold:true,color:hx(th.accent),margin:0});
-      const aDense=rowH<0.85, aHeadH=Math.max(.22,Math.min(.42,rowH*(b.d?.44:.9)));
-      sink.text(b.h||'',{edit:'b:'+i+':h',x:x+.5,y,w:colW-.5,h:aHeadH,...bodyRhythm,fontFace:bodyFont,fontSize:aDense?Math.max(13,bodySize-4):Math.max(18,bodySize),bold:true,italic:bodyItalic,align,color:bodyInk,margin:0,fit:'shrink'});
-      if(b.d) sink.text(b.d,{edit:'b:'+i+':d',x:x+.5,y:y+aHeadH+.02,w:colW-.5,h:Math.max(.18,rowH-aHeadH-.08),...bodyRhythm,fontFace:bodyFont,fontSize:aDense?Math.max(11,bodySize-6):Math.max(16,bodySize-2),bold:bodyBold,italic:bodyItalic,align,color:subInk,margin:0,fit:'shrink'});
+      const aDense=rowH<0.85, aHeadSize=aDense?Math.max(13,bodySize-4):Math.max(18,bodySize),
+        aDetailSize=aDense?Math.max(11,bodySize-6):Math.max(16,bodySize-2),
+        aSplit=templateRowSplit(b.h,b.d,rowH,colW-.5,aHeadSize,aDetailSize,bodyRhythm), aHeadH=aSplit.headH;
+      sink.text(b.h||'',{edit:'b:'+i+':h',x:x+.5,y,w:colW-.5,h:aHeadH,...bodyRhythm,fontFace:bodyFont,fontSize:aHeadSize,bold:true,italic:bodyItalic,align,color:bodyInk,margin:0,fit:'shrink'});
+      if(b.d) sink.text(b.d,{edit:'b:'+i+':d',x:x+.5,y:y+aHeadH+aSplit.inner,w:colW-.5,h:aSplit.detailH,...bodyRhythm,fontFace:bodyFont,fontSize:aDetailSize,bold:bodyBold,italic:bodyItalic,align,color:subInk,margin:0,fit:'shrink'});
       if(row<rows-1) sink.rect({x,y:y+rowH-.05,w:colW,h:.012,fill:{color:subInk,transparency:72},line:{color:subInk,transparency:100}});
     });
     return;
@@ -410,16 +456,17 @@ function originalTemplateSlideContent(sink,s,idx,layout,st,pptx){
     const two=items.length>4, cols=two?2:1, rows=Math.ceil(items.length/cols), gap=content.w*.06, colW=(content.w-gap*(cols-1))/cols;
     items.forEach((b,i)=>{
       const col=Math.floor(i/rows), row=i%rows, rowH=content.h/Math.max(1,rows), x=content.x+col*(colW+gap), y=content.y+row*rowH;
-      /* 補充說明的位置要跟著行高走。舊版固定寫死 +0.42，遇到樣板的小型文字框
-         （行高不到 0.9 吋）就會壓到下一條的標題。 */
-      const dense=rowH<0.85, headH=Math.max(.22,Math.min(.45,rowH*(b.d?.44:.9)));
+      /* 補充說明的位置與高度要跟著實際內容走，不再照固定比例分配。 */
+      const dense=rowH<0.85;
       const headSize=dense?Math.max(13,bodySize-4):Math.max(18,bodySize);
+      const detailSize=dense?Math.max(11,bodySize-6):Math.max(16,bodySize-2);
+      const rowSplit=templateRowSplit(b.h,b.d,rowH,colW-.23,headSize,detailSize,bodyRhythm), headH=rowSplit.headH;
       sink.rect({x,y:y+headH*.34,w:.085,h:.085,fill:{color:hx(th.accent)},line:{color:hx(th.accent),transparency:100}});
-      const hBox={x:x+.23,y,w:colW-.23,h:headH}, dBox={x:x+.23,y:y+headH+.02,w:colW-.23,h:Math.max(.18,rowH-headH-.08)};
-      sink.text(b.h||'',{edit:'b:'+i+':h',placeholder:'輸入條列標題',...hBox,...bodyRhythm,fontFace:bodyFont,fontSize:fitFontSize(b.h,hBox,headSize,{min:10}),
+      const hBox={x:x+.23,y,w:colW-.23,h:headH}, dBox={x:x+.23,y:y+headH+rowSplit.inner,w:colW-.23,h:rowSplit.detailH};
+      sink.text(b.h||'',{edit:'b:'+i+':h',placeholder:'輸入條列標題',...hBox,...bodyRhythm,fontFace:bodyFont,fontSize:fitFontSize(b.h,hBox,headSize,{min:nativeReadable?18:10}),readabilityFloor:nativeReadable?18:0,
         bold:true,italic:bodyItalic,align,color:bodyInk,margin:0,valign:'top'});
       if(b.d) sink.text(b.d,{edit:'b:'+i+':d',...dBox,...bodyRhythm,fontFace:bodyFont,
-        fontSize:fitFontSize(b.d,dBox,dense?Math.max(11,bodySize-6):Math.max(16,bodySize-2),{min:9}),bold:bodyBold,italic:bodyItalic,align,color:subInk,margin:0,valign:'top'});
+        fontSize:fitFontSize(b.d,dBox,detailSize,{min:nativeReadable?18:9}),readabilityFloor:nativeReadable?18:0,bold:bodyBold,italic:bodyItalic,align,color:subInk,margin:0,valign:'top'});
     });
   }else if(s.subtitle){
     sink.text(s.subtitle,{edit:'subtitle',...content,...bodyRhythm,fontFace:bodyFont,fontSize:bodySize,bold:bodyBold,italic:bodyItalic,align,color:bodyInk,margin:0,valign:'top',fit:'shrink'});
@@ -447,6 +494,7 @@ async function applyPowerPointTemplate(generated,exportSlides,designAssignments)
   exportSlides=exportSlides||S.slides;
   designAssignments=designAssignments||{...DESIGN_ASSIGN};
   const out=await JSZip.loadAsync(generated), src=await JSZip.loadAsync(t.buffer);
+  const restoreMascot=await Mascot.captureMedia(out,src);
   const full=!!t.canMergeMasters, fallbackMedia={};
   const infrastructure=/^ppt\/(slideMasters|slideLayouts|theme|media|fonts)\//i;
   if(full){
@@ -464,6 +512,7 @@ async function applyPowerPointTemplate(generated,exportSlides,designAssignments)
     }
   }
 
+  restoreMascot();
   if(full){
     const gp=xmlDoc(await zipText(out,'ppt/presentation.xml'),'輸出 presentation.xml');
     const gr=xmlDoc(await zipText(out,'ppt/_rels/presentation.xml.rels'),'輸出 presentation.xml.rels');
@@ -506,7 +555,7 @@ async function applyPowerPointTemplate(generated,exportSlides,designAssignments)
       if(full){
         xmlList(slideDoc,'bg').forEach(bg=>bg.remove());
         const root=slideDoc.documentElement;
-        if(root&&root.getAttribute('showMasterSp')==='0') root.removeAttribute('showMasterSp');
+        if(root)root.setAttribute('showMasterSp','1');
       }
 
       /* 範例投影片模式：把樣板那一頁的裝飾圖形插到最前面（也就是文字底下）。
@@ -610,17 +659,22 @@ function prepareTemplateSlides(slides){
 
 async function exportPPTX(){
   if(!(S.slides||[]).length) return fail('目前沒有可匯出的投影片。');
+  try{ChartDataContract.assertDeck(S.slides);}catch(e){return fail(e.message);}
   const templateCheck=scenarioTemplateStatus();
   if(!templateCheck.ok) return fail(templateCheck.msg);
-  attachSourceNotes(S.slides); saveDraft();
+  // Freeze the source deck before asynchronous packaging. Export preparation may
+  // add continuation metadata, but must never rewrite the editor's source pages.
+  const sourceSlides=JSON.parse(JSON.stringify(S.slides));
+  attachSourceNotes(sourceSlides); saveDraft();
   toast('打包 PPTX 中');
   try{
     const Pptx = (await loadLib('pptx')).lib;
     const st=curStyle(), pptx=new Pptx(), tpl=S.pptTemplate;
-    const exportSlides=tpl?prepareTemplateSlides(S.slides):S.slides;
+    const exportSlides=tpl?prepareTemplateSlides(sourceSlides):(typeof prepareAdvancedSlides==='function'?prepareAdvancedSlides(sourceSlides):sourceSlides);
+    ChartDataContract.assertDeck(exportSlides);
     // 以本次實際匯出的續頁頁序檢查；排版風險僅提醒，不再阻擋下載。
-    const findings=tpl?exportSlides.flatMap((s,i)=>templateTextIssues(s).map(issue=>({page:i+1,issue}))):[];
-    const isLayoutWarning=issue=>/空間不足|重疊|超出投影片邊界|內容區高度不足|需續頁|字級已|圖表可用高度不足/.test(issue);
+    const findings=exportSlides.flatMap((s,i)=>(tpl?templateTextIssues(s):FreeLayout.plan(s,st,i,exportSlides.length).issues).map(issue=>({page:i+1,issue})));
+    const isLayoutWarning=issue=>/空間不足|重疊|超出投影片邊界|內容區高度不足|需續頁|字級已|圖表可用高度不足|標籤.*擁擠|標籤.*過密/.test(issue);
     const fatal=findings.filter(x=>!isLayoutWarning(x.issue));
     if(fatal.length)return fail('無法安全產生 PPTX：'+fatal.map(x=>`第 ${x.page} 頁：${x.issue}`).join('；'));
     DESIGN_ASSIGN={};
@@ -633,7 +687,11 @@ async function exportPPTX(){
 
     exportSlides.forEach((s,idx)=>{
       const sl=pptx.addSlide();
-      if(tpl){ addTemplateSlideContent(pptxSink(pptx,sl),s,idx,templateLayoutFor(s.layout,s),st,pptx); return; }
+      if(tpl){ addTemplateSlideContent(pptxSink(pptx,sl),s,idx,templateLayoutFor(s.layout,s),st,pptx); Mascot.add(sl,s,idx); return; }
+      if(typeof FreeLayout!=='undefined'){
+        sl.background={color:hx(st.bg)};if(s.note)sl.addNotes(s.note);
+        FreeLayout.draw(FreeLayout.plan(s,st,idx,exportSlides.length),pptxSink(pptx,sl),st,pptx,sl);Mascot.add(sl,s,idx);return;
+      }
       const tx=slideTextStyle(s), FD=pptFontFamily(tx,st), FB=FD;
       const titleColor=hx(tx.titleColor||st.ink), bodyColor=hx(tx.bodyColor||st.sub);
       const titleOpts={fontSize:tx.titleSize,bold:!!tx.titleBold,italic:!!tx.titleItalic,color:titleColor,fontFace:FD,align:tx.align,
@@ -668,12 +726,15 @@ async function exportPPTX(){
         kick();
         sl.addText(s.title||'資料圖表',{x:M,y:.75+ky,w:W,h:.68,...titleOpts,fontSize:Math.min(tx.titleSize,38),valign:'top',fit:'shrink'});
         const chartY=1.62+ky, chartH=Math.max(3.45,4.48-ky), sourceY=chartY+chartH+.08;
-        if(s.chart.type==='content'){
+        if(typeof ADVANCED_TYPES!=='undefined'&&ADVANCED_TYPES.includes(s.chart.type)){
+          addAdvancedNative(sl,s.chart,{x:M,y:chartY,w:W,h:chartH,fontFace:FB,chartColors:chartDisplayStyle(s.chart,st,s.chart.series.length).palette.map(hx)});
+          sl.addText('資料來源：'+(s.chart.source||'使用者上傳資料'),{x:M,y:sourceY,w:W,h:.18,fontSize:8,color:hx(st.sub),fontFace:FB,margin:0});
+        }else if(s.chart.type==='content'){
           addContentFlowPptx(pptxSink(pptx,sl),s.chart,{x:M,y:chartY,w:W,h:chartH},{surface:st.surface,ink:st.ink,sub:st.sub,accent:st.accent,accent2:st.accent2,font:FB});
           sl.addText('內容來源：'+(s.chart.source||'目前簡報頁面'),{x:M,y:sourceY,w:W,h:.18,fontSize:8,color:hx(st.sub),fontFace:FB,margin:0,fit:'shrink'});
         }else{
-          const type=safeChartType(s.chart), labels=(s.chart.labels||[]).slice(0,10);
-          const data=(s.chart.series||[]).slice(0,type==='doughnut'?1:2).map(one=>({
+          const type=safeChartType(s.chart), labels=(s.chart.labels||[]).slice();
+          const data=(s.chart.series||[]).slice().map(one=>({
             name:chartUnitName(one),labels,values:(one.values||[]).slice(0,labels.length).map(pptChartValue)
           }));
           const chartType=type==='line'?pptx.ChartType.line:type==='doughnut'?pptx.ChartType.doughnut:pptx.ChartType.bar;
@@ -736,8 +797,12 @@ async function exportPPTX(){
     done();
     if(findings.length){
       const pages=[...new Set(findings.map(x=>x.page))].join('、');
+      /* 固定原位置模式本來就不會自動續頁或搬動文字框，提醒要一起說清楚怎麼解決，
+         否則使用者只看到「空間不足」，不知道是自己選的模式造成的。 */
+      const preserved=exportSlides.some(s=>s&&s.templateFitMode==='preserve');
       window.alert('PPTX 已產生並開始下載。\n\n部分頁面可能需要人工微調：第 '+pages+' 頁（依匯出檔頁碼）。\n'+
         findings.map(x=>`第 ${x.page} 頁：${x.issue}`).join('\n')+
+        (preserved?'\n\n有頁面設定為「完全固定原位置與頁數」：這個模式不會自動續頁，也不會搬動任何文字框，字級只在原框內縮到 16pt。想讓工具自動處理，請在「編輯本頁母片與文字區域」把放置方式改成另外兩種，或縮短該頁文字。':'')+
         '\n\n請使用 PowerPoint 開啟檔案，檢查文字溢出、重疊與版面位置。');
     }
   }catch(e){ fail(e.message||'PPTX 匯出失敗'); }

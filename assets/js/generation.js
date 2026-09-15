@@ -2,6 +2,11 @@ async function genOutline(){
   if(!S.topic.trim()) return fail('先填簡報主題才能生成大綱。');
   toast(S.economy?'生成中':'規劃大綱中');
   try{
+    if(S.scenario==='monthly'){
+      const out=await ask('你是能源資料簡報架構師。只輸出 Markdown 頁面，不加入獨立頁碼。',buildPrompt());
+      S.slides=attachSourceNotes(prepareGeneratedSlides(parseMarkdownDeck(mergeMonthlyComputedPages(out))));
+      S.cursor=0;S.view='editor';S.tab='outline';saveDraft();done();return;
+    }
     const st=curStyle();
     const pageGuide=Number(S.pages)>0
       ? `正好 ${Math.trunc(Number(S.pages))} 頁（含封面與結尾）`
@@ -190,7 +195,9 @@ function buildPrompt(){
   const plan=S.plan?('\n[頁面規劃]\n'+S.plan+'\n'):'';
   const sc=currentScenario(), requirements=sc&&sc.requirements?('\n'+sc.requirements+'\n'):'';
   const coverRule=sc&&sc.includeCover
-    ? '第一頁必須是封面，而且封面計入總頁數；封面之後仍要完整保留全部必要分析主題群。不得額外加入目錄或結尾頁。'
+    ? (sc.includeAgenda&&sc.includeClosing
+      ? '依序安排封面、三項目錄、全部必要分析主題群、結尾；封面、目錄、結尾均計入總頁數。建議六頁不是上限，內容密集時可拆頁，指定頁數時依該總頁數規劃。'
+      : '第一頁必須是封面，而且封面計入總頁數；封面之後仍要完整保留全部必要分析主題群。不得額外加入目錄或結尾頁。')
     : '不得額外加入未要求的封面、目錄或結尾頁。';
   const scenarioPageGuidance=sc&&S.scenario!=='own'
     ? (fixedPages
@@ -202,7 +209,7 @@ function buildPrompt(){
   const templateInstruction=sc&&sc.templateSuggested
     ? `\n[樣板與輸出規則]\n${S.pptTemplate
       ? `已上傳 PPTX 樣板「${S.pptTemplate.name}」。請控制每頁文字量，讓內容能放入原母片預留位置；網站匯出時會沿用母片、背景、Logo、頁尾、字型與配色。`
-      : `尚未上傳 PPTX 樣板。雲端連結無法提供母片、背景與字型；若要真正套用 ${sc.expectedTemplate}，必須在步驟五上傳原始 .pptx。`}
+      : '未上傳 PPTX，使用目前網站選用風格，仍可正常生成與匯出。上傳母片為選用，接受任意檔名；課程樣板只是參考，不是必備附件。'}
 輸出檔名：${sc.outputName||'簡報.pptx'}。圖表必須使用來源中的真實數值，並保持可編輯。\n`
     : '';
   /* 缺件時明確告訴模型「缺哪些、哪幾頁」，避免它自行補造資料 */
@@ -213,6 +220,7 @@ function buildPrompt(){
   return `${rules}
 
 [輸出格式] 請嚴格以下列 Markdown 格式輸出，每一頁一個區塊，不要加任何其他說明文字：
+頁碼由匯出排版處理，不要在核心結論、條列或區塊末尾輸出獨立頁碼、頁碼欄位或分隔線。頁標題直接寫內容，不需寫「第 N 頁」。
 
 # 頁標題
 > 核心結論
@@ -222,7 +230,16 @@ function buildPrompt(){
 備註：資料時點或限制；需口頭補充的內容
 ${sc&&sc.includeCover?'\n封面格式：第一個區塊只寫「# 簡報主題」、「> 副標」與「備註：」，不要在封面放條列。\n':''}
 ${plan}${requirements}${scenarioPageGuidance}${templateInstruction}${gap}
-[系統完整計算結果] 以下數值由瀏覽器讀取完整 Excel 後計算，優先於抽樣列；有結果的欄位必須直接使用，不得再寫「資料待補」：
+${S.scenario==='monthly'?`[情境一分析精準規則]
+- 限 2024 與 2025 年 6–9 月、住宅部門、全台縣市，六都與非六都分組。其他年度或部門不得混入。
+- 必須涵蓋兩年總量、同期變化率、六都／非六都占比與占比變化；區分百分比與百分點，不得互換。
+- 依同期用電增幅排序前十縣市，不得把最高用電量當最高增幅；若全體下降仍按實際增幅排序並說明。
+- 冷氣時必須匹配同縣市與同期間；沒有完整配對不得聲稱已證實相關，更不能聲稱因果。
+- 優先逐項沿用下方已通過檢核的計算結果，不能因抽樣列不全而將已知值改成資料待補，也不能自行推算未檢核總量。
+- 節能策略僅引用真正提供的策略資料；歷史國外政策不能當成本次用電數值來源。母片內容僅供視覺，不是政策證據。建議与現行措施分開標示。
+- 每頁備註列出該頁實際依據與限制，不為所有頁貼同一份不相關來源。缺資料只標缺少欄位，不產生假數據。
+`:''}
+[系統資料檢核與計算結果] 下方包含來源完整性檢核。僅已通過檢核的數值可作全台統計，優先於抽樣列；缺漏、重複或未完成檢核不得當成 0，不得推算完整排名：
 ${computed.text||'（本情境沒有可用的系統計算結果）'}
 
 [素材] 以下是要做成簡報的內容：
@@ -232,7 +249,7 @@ ${tables?`\n[結構化表格原值]\n${tables}\n`:''}
 [資料使用規則]
 ${sourcePolicyText()}
 - 只引用上面實際提供的內容，不得虛構數字、政策、成效或因果。
-- 頁面規劃必須保留全部分析主題與先後邏輯，並符合「頁數規範」；${sc&&sc.includeCover?'第一頁必須是封面且計入總頁數，不得自行增加目錄或結尾頁。':'不得自行增加未要求的封面、目錄或結尾頁。'}
+- 頁面規劃必須保留全部分析主題與先後邏輯，並符合「頁數規範」；${coverRule}
 - 每頁都要輸出一行「備註：」，說明資料時點、限制或需口頭補充處；不要把備註混入畫面條列。
 - 不必在 Markdown 自行列 [Sources]；網站會依上傳檔名與來源投影片頁碼加入 PowerPoint 講稿。`;
 }
@@ -282,10 +299,21 @@ function parseMarkdownDeck(text){
   // AI 常在最後加一句客套話，不要把它當成條列
   const CLOSER=/^(希望|以上|如需|如果需要|需要我|請問|讓我知道|有任何|祝|Hope|Let me know|Feel free)/;
 
-  const lines=t.split('\n');
+  // Only strip clear footer metadata or a sequential run at block ends.
+  // Never remove numeric bullets or numbers with units (actual measurements).
+  const blocks=t.split(/(?=^#{1,6}\s)/m);
+  const tails=blocks.map(block=>{const ls=block.trimEnd().split('\n');return {ls,value:/^\s*\d{1,3}\s*$/.test(ls.at(-1)||'')?Number(ls.at(-1)):null};});
+  tails.forEach((b,i)=>{
+    const previous=tails[i-1],next=tails[i+1];
+    const sequence=b.value!==null&&((previous?.value!==null&&previous?.value===b.value-1)||(next?.value!==null&&next?.value===b.value+1));
+    const afterNote=b.value!==null&&b.ls.slice(0,-1).some(l=>/^\s*(?:備註|講稿)\s*[：:]/.test(l));
+    if(sequence||afterNote)b.ls.pop();
+  });
+  const lines=tails.map(b=>b.ls.join('\n')).join('\n').split('\n');
   const slides=[]; let cur=null;
   lines.forEach(L=>{
     if(!L.trim()) return;
+    if(/^\s*(?:[-*_]{3,}|(?:頁碼|page\s*number)\s*[:：]\s*\d+(?:\s*\/\s*\d+)?)\s*$/i.test(L))return;
     const h=heading(L);
     if(h!==null && clean(h)){ cur={title:clean(h),kicker:'',bullets:[],note:''}; slides.push(cur); return; }
     if(!cur) return;
@@ -320,8 +348,10 @@ function parseMarkdownDeck(text){
     // 只有在不會弄丟內容時才套用封面／結尾版型
     const isFirst=i===0, isLast=i===slides.length-1 && slides.length>1;
     let layout='bullets';
-    if(isFirst && !x.bullets.length) layout='cover';
-    else if(isLast && x.bullets.length<=3) layout='closing';
+    const scenario=currentScenario();
+    if(isFirst && !x.bullets.length && (!scenario||scenario.includeCover)) layout='cover';
+    else if(/^(?:.*[｜|：:]\s*)?(?:目錄|大綱|議程|agenda)(?:頁)?$/i.test(x.title.trim()))layout='agenda';
+    else if(isLast && /^(?:.*[｜|：:]\s*)?(?:感謝.*|謝謝.*|結尾|Q\s*[&＆]\s*A|問答|thank\s*you.*)$/i.test(x.title.trim()))layout='closing';
     const s=normalize({
       layout, title:x.title,
       subtitle: layout==='cover'?x.kicker:'',
@@ -333,6 +363,7 @@ function parseMarkdownDeck(text){
     s.kicker = layout==='cover'?'':x.kicker;
     s.note = x.note||x.kicker||'';
     s.status='generated';
+    s.outlinePage=i+1;s.outlineTitle=x.title;
     return s;
   });
 }
@@ -350,13 +381,13 @@ function ensureRequiredCover(slides){
   return [cover,...input];
 }
 
-function prepareGeneratedSlides(slides){
+function prepareGeneratedSlides(slides,options={}){
   const hadCover=Array.isArray(slides)&&slides.some(s=>s&&s.layout==='cover');
-  const out=expandSlidesByContent(ensureRequiredCover(slides));
+  const out=expandSlidesByContent(ensureRequiredCover(slides),options);
   const target=Math.max(0,Math.trunc(Number(rulesObj().pages)||Number(S.pages)||0));
   /* 舊草稿原本已達指定頁數、現在才補封面時，優先把同一主題群的相鄰續頁
      安全合併回去；只有 4 點、190 字內才合併，避免為了頁數重新造成擠字。 */
-  if(!hadCover&&target>0){
+  if(!options.confirmedOutline&&!hadCover&&target>0){
     while(out.length>target){
       let at=-1;
       for(let i=1;i<out.length-1;i++){
@@ -376,12 +407,12 @@ function prepareGeneratedSlides(slides){
   return out;
 }
 
-function expandSlidesByContent(slides){
+function expandSlidesByContent(slides,options={}){
   const input=Array.isArray(slides)?slides:[];
   const target=Math.max(0,Math.trunc(Number(rulesObj().pages)||Number(S.pages)||0));
   /* 明確指定頁數時，若 AI 回得太少，只拆分既有條列直到指定頁數；
      不複製內容、不新增空話。若原始內容不足以拆到目標，保留實際可用頁數。 */
-  if(target>0){
+  if(target>0&&!options.confirmedOutline){
     const fixed=input.map((s,i)=>Object.assign(JSON.parse(JSON.stringify(s||{})),{
       sourceGroup:Number.isFinite(Number(s&&s.sourceGroup))?Number(s.sourceGroup):i+1}));
     while(fixed.length<target){
@@ -396,6 +427,7 @@ function expandSlidesByContent(slides){
       const second=Object.assign({},original,{id:uid(),layout:original.layout==='closing'?'bullets':original.layout,
         title:`${String(original.title||'未命名').replace(/（續 \d+）$/,'')}（續 2）`,bullets:items.slice(cut),autoSplit:true,
         note:[original.note,`由原始第 ${original.sourceGroup} 個主題群拆頁，以符合指定頁數並避免文字擠壓。`].filter(Boolean).join('\n')});
+      if(second.kicker){second.note=[second.note,second.kicker].filter(Boolean).join('\n');second.kicker='';}
       first.autoSplit=true; fixed.splice(at,1,first,second);
     }
     const totals={},seen={},roots={};
@@ -411,7 +443,9 @@ function expandSlidesByContent(slides){
       slide.id=part===0?(slide.id||uid()):uid();
       slide.sourceGroup=group;
       if(part>0) slide.title=`${base.title||'未命名'}（續 ${part+1}）`;
-      if(part>0 && slide.kicker) slide.kicker=`延續前頁：${slide.kicker}`;
+      // A continuation must not repeat an automatic lead-in on the slide.
+      // Preserve the source conclusion on its first page and in speaker notes.
+      if(part>0 && slide.kicker){slide.note=[slide.note,slide.kicker].filter(Boolean).join('\n');slide.kicker='';}
       if(part>0) slide.note=[slide.note,`本頁由原始第 ${group} 個主題群自動拆頁，避免文字擠壓。`].filter(Boolean).join('\n');
       slide.autoSplit=total>1;
       out.push(slide);
@@ -470,7 +504,7 @@ function importPasted(){
     S.outlineBasis=wizardBasis(); S.modal=null; S.err=null; S.step=4; S.maxStep=Math.max(S.maxStep,4); saveDraft(); render(); return;
   }
   try{
-    const slides=prepareGeneratedSlides(parseMarkdownDeck(txt));
+    const slides=prepareGeneratedSlides(parseMarkdownDeck(txt),{confirmedOutline:true}).map(chooseContentLayout);
     if(!S.topic) S.topic=slides[0].title||'未命名簡報';
     slides.forEach(s=>s.footer=clipText(S.topic||'',24));
     S.slides=attachSourceNotes(markMissingDataPages(slides)); S.cursor=0;
@@ -515,6 +549,7 @@ function normalize(x){
 
 async function genOne(i,silent){
   const s=S.slides[i]; if(!s) return;
+  const original=JSON.stringify(s);
   if(!silent) toast('重新生成第 '+(i+1)+' 頁');
   const st=curStyle();
   const hits = retrieve(allChunks(), s.title+' '+(s.bullets||[]).map(b=>b.h).join(' '));
@@ -526,10 +561,13 @@ async function genOne(i,silent){
 風格提示：${st.prompt}
 
 目前這頁：
-${JSON.stringify({layout:s.layout,title:s.title,bullets:s.bullets,subtitle:s.subtitle})}
+${JSON.stringify({layout:s.layout,title:s.title,bullets:s.bullets,subtitle:s.subtitle,columns:s.columns,stat:s.stat,quote:s.quote,note:s.note})}
+
+${AIRevisionGuard.instruction}
+${monthlyScenarioEvidence().text}
 
 可用素材：
-${hits.length? hits.map(h=>'['+h.src+'] '+h.text.slice(0,300)).join('\n') : '（無，請依主題常識撰寫）'}
+${hits.length? hits.map(h=>'['+h.src+'] '+h.text.slice(0,300)).join('\n') : '（無來源，只整理現有文字，不補造統計）'}
 
 依 layout 輸出對應欄位的 JSON 物件：
 - cover：title、subtitle
@@ -540,6 +578,8 @@ ${hits.length? hits.map(h=>'['+h.src+'] '+h.text.slice(0,300)).join('\n') : '（
 所有版型都要有 note（講稿一句，30 字內）。
 繁體中文，h 不超過 16 字，d 不超過 26 字。只輸出 JSON。`;
   const o = parseJSON(await ask(sys,prompt));
+  if(S.slides[i]!==s||JSON.stringify(s)!==original)throw Error('原頁已修改，AI 回覆未套用，請重新生成。');
+  AIRevisionGuard.verify(s,o);
   pushHistory(i);
   if(o.title) s.title=o.title;
   if(o.subtitle) s.subtitle=o.subtitle;
@@ -564,6 +604,7 @@ async function genAll(){
 async function reviseOne(){
   if(!S.instruction.trim()) return;
   const i=S.cursor, s=S.slides[i];
+  const original=JSON.stringify(s);
   toast('修改中');
   try{
     const sys='你是簡報編輯。依指令改寫這一頁，只輸出單一 JSON 物件，保持相同欄位結構。';
@@ -573,8 +614,12 @@ ${JSON.stringify({layout:s.layout,title:s.title,subtitle:s.subtitle,bullets:s.bu
 
 修改指令：${S.instruction}
 
+${AIRevisionGuard.instruction}
+
 保持 layout 不變（除非指令明確要求換版型，可選 ${Object.keys(LAYOUTS).join('/')}）。繁體中文，只輸出 JSON。`;
     const o = parseJSON(await ask(sys,prompt));
+    if(S.slides[i]!==s||JSON.stringify(s)!==original)throw Error('原頁已修改，AI 回覆未套用，請重新生成。');
+    AIRevisionGuard.verify(s,o);
     pushHistory(i);
     ['title','subtitle','note','stat','quote','columns'].forEach(k=>{ if(o[k]) s[k]=o[k]; });
     if(o.layout && LAYOUTS[o.layout]) s.layout=o.layout;

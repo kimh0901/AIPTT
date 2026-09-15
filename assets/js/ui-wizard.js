@@ -11,6 +11,7 @@ function monthlyOutlineNeedsRefresh(){
 }
 
 function wizardCheckpoint(step){
+  if(step===5&&S.styleReturnSession&&S.styleReturnSession.basis===S.md)return {ok:true,msg:'已保留現有投影片；此處僅調整整體外觀，完成後返回微調。'};
   if(step===1){
     const sc=SCENARIOS[S.scenario];
     return sc?{ok:true,msg:'已選擇「'+sc.name+'」'}:{ok:false,msg:'請先選擇一個簡報情境'};
@@ -117,6 +118,7 @@ function applyWizardCheckpoint(){
 }
 
 function stepBar(){
+  if(S.styleReturnSession&&S.styleReturnSession.basis===S.md)return '<h1>整體風格設定</h1><p>目前正在調整已完成簡報的外觀，不會重跑前面的資料與大綱步驟。</p>';
   return `<div style="display:flex;gap:0;margin-bottom:30px;flex-wrap:wrap">
     ${STEPS.map(s=>{
       const cpn=wizardCheckpoint(s.n), on=s.n===S.step, unlocked=s.n<=S.maxStep, complete=s.n<S.maxStep&&cpn.ok&&!cpn.warn;
@@ -137,7 +139,7 @@ function teach(text){
 function navRow(nextLabel, nextAct, disabled){
   const cp=wizardCheckpoint(S.step), blocked=!!disabled||!cp.ok;
   return `<div style="display:flex;gap:10px;margin-top:24px;align-items:center">
-    ${S.step>1?`<button class="btn" data-act="goStep" data-k="${S.step-1}">返回</button>`:''}
+    ${S.step>1&&!S.styleReturnSession?`<button class="btn" data-act="goStep" data-k="${S.step-1}">返回</button>`:''}
     <span style="flex:1"></span>
     ${nextLabel?`<button class="btn pri" data-act="${nextAct}" ${blocked?'disabled':''} style="padding:11px 22px">${nextLabel}</button>`:''}
   </div><div class="hint" data-step-check style="text-align:right;color:${(cp.ok&&!cp.warn)?'var(--cy)':'var(--warn)'}">${(cp.ok&&!cp.warn)?'✓ ':''}${esc(cp.msg)}</div>`;
@@ -273,15 +275,15 @@ function viewWizard(){
     + ((currentScenario()&&currentScenario().templateSuggested)?`<div style="border:1px solid ${S.pptTemplate?'var(--cy)':'var(--line)'};border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:14.5px;line-height:1.65;color:${S.pptTemplate?'var(--cy)':'var(--paper)'}">
         ${S.pptTemplate?'✓ 已選擇母片':'PowerPoint 母片為選用，可直接略過'}<br><span style="color:var(--mute)">課程示例：${esc(currentScenario().expectedTemplate)}。你可以自由上傳其他 PPTX；未上傳時會使用目前網站風格，不影響完成與匯出。</span></div>`:'')
     + `<div class="wizard-style-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start">
-        <div class="style-workspace-settings"><h2 class="style-section-title">1. 選擇整份簡報外觀</h2>${templateBox()}<details class="style-options" ${S.pptTemplate?'':'open'}><summary>網站配色與 AI 風格</summary>${styleBox()}</details></div>
+        <div class="style-workspace-settings">${WorkflowUI.styleSetup()}</div>
         <div class="style-workspace-preview" style="border:1px solid var(--line);border-radius:10px;overflow:hidden">
-          <div style="padding:12px;font-size:15px;line-height:1.6"><b>實際內容預覽 · 第 ${previewIndex+1}／${deck.length} 頁</b><br>包含封面，完成後沿用這份內容。</div>
+          <div style="padding:12px;font-size:15px;line-height:1.6"><b>實際內容預覽 · 第 ${previewIndex+1}／${deck.length} 頁</b><br>依確認大綱與內容續頁，完成後沿用這份內容。${outlineMappingLabel(deck[previewIndex])}</div>
           <div class="frame"><div class="stage">${deck[previewIndex]?renderSlide(deck[previewIndex],st,previewIndex,deck.length,false):''}</div></div>
           <div class="wizard-preview-nav" style="display:flex;gap:6px;overflow-x:auto;padding:10px">${deck.map((s,i)=>`<button class="chip ${i===previewIndex?'on':''}" data-act="wizardPreviewPage" data-i="${i}" style="flex:0 0 auto">${i+1} ${s.layout==='cover'?'封面':esc(s.title||'內容')}</button>`).join('')}</div>
-          <div class="style-preview-actions"><button class="btn pri" data-preview="wizard">投影片預覽</button><p class="hint">先逐頁檢查，再完成並進入編輯器調整本頁文字、版面或圖表。瀏覽器預覽不包含 PowerPoint 動畫，部分原生母片元素以匯出檔為準。</p></div>
+          <div class="style-preview-actions"><p class="hint">這裡先核對整體外觀。按「完成簡報」進入逐頁微調，再預覽與匯出。</p></div>
         </div>
       </div>`
-    + navRow('完成，產生簡報','finishWizard');
+    + navRow('完成簡報','finishWizard');
   }
 
   return `${topbar(false)}
@@ -343,6 +345,14 @@ async function genMD(){
 }
 
 function finishWizard(){
+  if(S.styleReturnSession&&S.styleReturnSession.basis===S.md){
+    S.slides=JSON.parse(JSON.stringify(S.styleReturnSession.slides));
+    S.cursor=Math.min(S.styleReturnSession.cursor,Math.max(0,S.slides.length-1));
+    delete S.styleReturnSession;S.wizardPreviewCache=null;S.wizard=false;S.view='editor';S.tab='text';
+    saveDraft();render();
+    S.reviewPreviewWarning='';
+    return;
+  }
   const el=document.getElementById('wMD'); if(el) S.md=el.value;
   syncStep();
   const blocked=firstBlockedStep(5);
@@ -355,26 +365,35 @@ function finishWizard(){
     if(!S.topic) S.topic=slides[0].title||'未命名簡報';
     slides.forEach(s=>s.footer=clipText(S.topic||'',24));
     S.slides=attachSourceNotes(markMissingDataPages(slides)); S.cursor=0;
-    S.wizard=false; S.maxStep=5; S.view='editor'; S.tab='outline'; LS.set('wizardDone',true); saveDraft(); render();
+    S.wizard=false; S.maxStep=5; S.view='editor'; S.tab='text'; S.reviewFlow=true; LS.set('wizardDone',true); saveDraft(); render();
+    S.reviewPreviewWarning='';
   }catch(e){ fail(e.message); }
+}
+
+function outlineMappingLabel(slide){
+  if(!slide)return '';
+  const origin=slide.autoCover?'依情境補入封面':slide.outlinePage?'對應大綱第 '+slide.outlinePage+' 頁：'+(slide.outlineTitle||slide.title):'';
+  return '<div class="hint">'+esc([origin,slide.autoSplit?'內容較多，依序續頁': '',slide.autoLayoutReason||''].filter(Boolean).join(' ｜ '))+'</div>';
 }
 
 function chooseContentLayout(slide){
   // Preserve explicit cover/chart/quote/stat/column layouts and every source field.
   if(slide.layout!=='bullets')return slide;
   const items=slide.bullets||[],topic=[slide.title,slide.kicker].filter(Boolean).join(' ');
-  if(items.length===2&&/比較|對照|差異|優缺|方案|\bvs\b/i.test(topic)){
+  const compact=items.every(b=>String(b.h||'').length<=24&&String(b.d||'').length<=140);
+  if(items.length===2&&compact&&/比較|對照|差異|優缺|\bvs\b/i.test(topic)){
     slide.layout='twoCol';
     slide.columns=items.map(b=>({h:b.h||'內容',items:b.d?[b.d]:[]}));
     slide.autoLayoutReason='兩組比較內容，採左右對照';
-  }else slide.autoLayoutReason='依條列順序呈現，每頁優先五項';
+  }else slide.autoLayoutReason=items.length===2&&!compact?'比較文字較長，保留上下條列避免雙欄擠壓':'依大綱順序呈現，每頁優先五項；不憑數字猜測圖表或統計版型';
   return slide;
 }
 
 function wizardPreviewDeck(){
-  const key=JSON.stringify([S.md,S.topic,S.audience,S.scenario,S.pages,rulesObj()]);
+  if(S.styleReturnSession){if(S.styleReturnSession.basis===S.md)return S.styleReturnSession.slides;delete S.styleReturnSession;}
+  const key=JSON.stringify([S.md,S.topic,S.audience,S.scenario,S.pages,rulesObj(),S.templateRevision||0]);
   if(!S.wizardPreviewCache||S.wizardPreviewCache.key!==key){
-    const slides=prepareGeneratedSlides(parseMarkdownDeck(S.md||'')).map(chooseContentLayout);
+    const slides=WorkflowUI.withBookends(prepareGeneratedSlides(parseMarkdownDeck(S.md||''),{confirmedOutline:true}).map(chooseContentLayout));
     S.wizardPreviewCache={key,slides};S.wizardPreviewIndex=0;
   }
   return S.wizardPreviewCache.slides;

@@ -112,8 +112,10 @@ function safeChartType(chart){
 
 function pptChartValue(v){ const n=Number(v); return Number.isFinite(n)?n:null; }
 
-function renderChartHTML(chart,st){
+function renderChartHTML(chart,st,box){
   chart=chart||{};
+  const dataIssue=ChartDataContract.inspect(chart);
+  if(dataIssue)return '<div role="alert" style="padding:20px;overflow-wrap:anywhere">'+esc(dataIssue)+'</div>';
   if(chart.type==='content'){
     const items=(chart.items||[]).slice(0,5);
     if(!items.length) return `<div style="display:grid;place-items:center;height:390px;border:1px dashed ${st.rule};color:${st.sub};font-size:22px">目前頁面沒有可整理的圖表內容</div>`;
@@ -125,7 +127,7 @@ function renderChartHTML(chart,st){
   }
   /* 預覽必須跟匯出用同一套型別規則，否則畫面是直柱圖、匯出的 PPTX 卻變成橫條圖 */
   const drawType=safeChartType(chart);
-  const labels=(chart.labels||[]).slice(0,10), series=(chart.series||[]).slice(0,drawType==='doughnut'?1:2);
+  const labels=(chart.labels||[]).slice(), series=(chart.series||[]).slice();
   if(labels.length<2||!series.length) return `<div style="display:grid;place-items:center;height:390px;border:1px dashed ${st.rule};color:${st.sub};font-size:22px">目前頁面沒有可整理的圖表內容</div>`;
   const cfg=chartDisplayStyle(chart,st,Math.max(series.length,labels.length)), colors=cfg.palette;
   const showDirectValues=cfg.showValues||(series.length===1&&labels.length<=8);
@@ -143,16 +145,16 @@ function renderChartHTML(chart,st){
   }
   const all=series.flatMap(s=>(s.values||[]).slice(0,labels.length).map(v=>Number(v)).filter(Number.isFinite));
   if(!all.length) return `<div style="display:grid;place-items:center;height:390px;border:1px dashed ${st.rule};color:${st.sub};font-size:20px">沒有可繪製的有效數值。</div>`;
-  const min=Math.min(0,...all), max=Math.max(0,...all), span=Math.max(1,max-min), W=1080,H=350, top=18,bottom=62;
+  const domain=typeof utfChartDomain==='function'?utfChartDomain(all):{min:Math.min(0,...all),max:Math.max(0,...all),span:Math.max(1,Math.max(0,...all)-Math.min(0,...all))}, min=domain.min, max=domain.max, span=domain.span, W=1080,H=box?.w>0&&box?.h>0?Math.max(220,Math.min(1000,1080*box.h/box.w-28)):350, top=18,bottom=62;
   let marks='';
   if(drawType==='bar'){
-    const labelW=190, plotW=W-labelW-55, rowH=(H-25)/labels.length, zeroX=labelW+(-min/span)*plotW;
+    const valuePad=Math.max(80,...all.map(v=>chartValueLabel(v).length*10+24)), labelW=Math.max(190,valuePad), plotW=W-labelW-valuePad, rowH=(H-25)/labels.length, zeroX=labelW+(-min/span)*plotW;
     labels.forEach((label,i)=>{
       marks+=`<text x="${labelW-12}" y="${i*rowH+rowH*.58}" text-anchor="end" fill="${cfg.axis}" font-size="${Math.max(15,cfg.labelSize+4)}">${esc(label.slice(0,13))}</text>`;
       series.forEach((s,si)=>{ const v=Number((s.values||[])[i]); if(!Number.isFinite(v)) return;
         const bh=Math.min(16,rowH/(series.length+1)), y=i*rowH+rowH*.2+si*(bh+4), w=Math.abs(v)/span*plotW, x=v>=0?zeroX:zeroX-w;
         const fill=cfg.varyColors?colors[i%colors.length]:colors[si%colors.length];
-        marks+=`<rect x="${x}" y="${y}" width="${w}" height="${bh}" rx="${Math.min(4,st.radius)}" fill="${fill}"/><text x="${v>=0?x+w+8:x-8}" y="${y+bh-2}" text-anchor="${v>=0?'start':'end'}" fill="${cfg.axis}" font-size="${Math.max(13,cfg.dataLabelSize+2)}">${chartValueLabel(v)}</text>`; });
+        marks+=`<rect x="${x}" y="${y}" width="${w}" height="${bh}" rx="${Math.min(4,st.radius)}" fill="${fill}"/>`+(!chart.__freeLayout||showDirectValues?`<text x="${v>=0?x+w+8:x-8}" y="${y+bh-2}" text-anchor="${v>=0?'start':'end'}" fill="${cfg.axis}" font-size="${Math.max(13,cfg.dataLabelSize+2)}">${chartValueLabel(v)}</text>`:''); });
     });
   }else if(drawType==='line'){
     const plotX=35, plotW=W-70, plotH=H-bottom-top;
@@ -161,7 +163,7 @@ function renderChartHTML(chart,st){
       if(!pts.length) return;
       marks+=`<polyline points="${pts.map(p=>p.x+','+p.y).join(' ')}" fill="none" stroke="${colors[si]}" stroke-width="${Math.max(4,cfg.lineSize+1)}" stroke-linecap="round" stroke-linejoin="round"/>`;
       pts.forEach((p,pi)=>{ marks+=`<circle cx="${p.x}" cy="${p.y}" r="6" fill="${st.bg}" stroke="${colors[si]}" stroke-width="${Math.max(3,cfg.lineSize)}"/>`+
-        (showDirectValues&&series.length===1&&(pi===0||pi===pts.length-1)?`<text x="${p.x}" y="${Math.max(13,p.y-12)}" text-anchor="middle" fill="${cfg.axis}" font-size="${Math.max(13,cfg.dataLabelSize+2)}">${chartValueLabel(p.v)}</text>`:''); }); });
+        (showDirectValues&&(chart.__freeLayout||(series.length===1&&(pi===0||pi===pts.length-1)))?`<text x="${p.x}" y="${Math.max(13,p.y-12)}" text-anchor="${pi===0?'start':'end'}" fill="${cfg.axis}" font-size="${Math.max(13,cfg.dataLabelSize+2)}">${chartValueLabel(p.v)}</text>`:''); }); });
     labels.forEach((label,i)=>{ const x=plotX+(labels.length===1?0:i/(labels.length-1))*plotW; marks+=`<text x="${x}" y="${H-24}" text-anchor="middle" fill="${cfg.axis}" font-size="${Math.max(14,cfg.labelSize+3)}">${esc(label.slice(0,9))}</text>`; });
   }else{
     const plotX=25, plotW=W-50, plotH=H-bottom-top, group=plotW/labels.length, gap=8, barW=Math.max(6,Math.min(42,(group-20)/series.length)), zeroY=top+(max/span)*plotH;
@@ -169,7 +171,7 @@ function renderChartHTML(chart,st){
     labels.forEach((label,i)=>{ series.forEach((s,si)=>{ const v=Number((s.values||[])[i]); if(!Number.isFinite(v)) return; const h=Math.abs(v)/span*plotH, x=plotX+i*group+(group-series.length*barW-(series.length-1)*gap)/2+si*(barW+gap), y=v>=0?zeroY-h:zeroY;
         const fill=cfg.varyColors?colors[i%colors.length]:colors[si%colors.length];
         marks+=`<rect x="${x}" y="${y}" width="${barW}" height="${h}" rx="${Math.min(4,st.radius)}" fill="${fill}"/>`+
-          (showDirectValues?`<text x="${x+barW/2}" y="${Math.max(13,y-7)}" text-anchor="middle" fill="${cfg.axis}" font-size="${Math.max(12,cfg.dataLabelSize+1)}">${chartValueLabel(v)}</text>`:''); });
+          (showDirectValues?`<text x="${x+barW/2}" y="${v>=0?Math.max(13,y-7):Math.min(H-bottom+24,y+h+18)}" text-anchor="middle" fill="${cfg.axis}" font-size="${Math.max(12,cfg.dataLabelSize+1)}">${chartValueLabel(v)}</text>`:''); });
       marks+=`<text x="${plotX+i*group+group/2}" y="${H-24}" text-anchor="middle" fill="${cfg.axis}" font-size="${Math.max(14,cfg.labelSize+3)}">${esc(label.slice(0,8))}</text>`; });
   }
   return `<div class="numeric-chart-preview" style="height:390px;position:relative"><div style="height:28px;font-size:15px;color:${st.sub}">${legend}</div><svg viewBox="0 0 ${W} ${H}" style="display:block;width:100%;height:340px;overflow:visible;font-family:${SANS};background:${cfg.plotBg};border-radius:4px">${marks}</svg>${source}</div>`;
@@ -203,6 +205,11 @@ function renderTemplateSlide(s, st, idx, total, editable){
 }
 
 function renderSlide(s, st, idx, total, editable){
+  const output=renderSlideBase(s,st,idx,total,editable);
+  return output+(typeof Mascot!=='undefined'?Mascot.html(s,idx):'');
+}
+function renderSlideBase(s, st, idx, total, editable){
+  if(!S.pptTemplate&&typeof FreeLayout!=='undefined')return FreeLayout.html(s,st,idx,total,editable);
   /* 只在唯讀預覽（縮圖、放映、匯出 HTML 以外）時套用樣板版面；
      可編輯的畫面仍用原本的網站版型，才能就地改字。 */
   /* 套版預覽模式下也允許就地編輯：文字框加上 data-edit，改完直接寫回這一頁 */

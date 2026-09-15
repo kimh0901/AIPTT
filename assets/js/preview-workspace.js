@@ -6,12 +6,12 @@ present=function(fromWizard=false){
   const copies=JSON.parse(JSON.stringify(source));
   const assignments={...DESIGN_ASSIGN};
   let deck;
-  try{deck=S.pptTemplate?prepareTemplateSlides(copies):copies;}
+  try{deck=S.pptTemplate?prepareTemplateSlides(copies):(typeof prepareAdvancedSlides==='function'?prepareAdvancedSlides(copies):copies);}
   finally{DESIGN_ASSIGN=assignments;}
   previewSession={deck,source,wizard:fromWizard,focus:document.activeElement};
   const root=document.getElementById('present');
   root.setAttribute('role','dialog');root.setAttribute('aria-modal','true');root.setAttribute('aria-label','投影片預覽');
-  root.innerHTML=`<header class="slide-preview-toolbar"><b>投影片預覽</b><span id="previewSlideTitle"></span><button class="btn" data-preview="fullscreen">全螢幕</button><button class="btn" data-preview="close">返回${fromWizard?'風格設定':'編輯'}</button></header>
+  root.innerHTML=`<header class="slide-preview-toolbar"><b>簡報預覽</b><span id="previewSlideTitle"></span><button class="btn" data-preview="fullscreen">全螢幕</button><button class="btn pri" data-preview="close">${fromWizard?'返回風格設定':'逐頁微調'}</button></header>
     <div class="slide-preview-viewport"><div id="presentWrap"></div></div>
     <footer class="slide-preview-footer"><div class="slide-preview-navigation"><button class="btn" data-preview="prev" aria-label="上一頁">← 上一頁</button><select id="previewPageSelect" aria-label="跳至投影片">${deck.map((s,i)=>`<option value="${i}">${i+1} / ${deck.length}　${esc(s.title||'未命名')}${s.exportContinuation?'（續頁）':''}</option>`).join('')}</select><button class="btn" data-preview="next" aria-label="下一頁">下一頁 →</button></div><div id="presentHud" role="status" aria-live="polite"></div><small>依目前套版與續頁結果預覽。字型、原生母片元素與動畫仍以 PowerPoint 匯出檔為準。</small></footer>`;
   document.getElementById('app').inert=true;

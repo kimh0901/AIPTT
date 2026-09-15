@@ -75,10 +75,25 @@ function templateChoicePanel(s){
     }).join('');
     return `<button class="chip ${Number(s.designIndex)===d.index&&s.templateMode!=='master'?'on':''}" data-act="chooseTemplatePage" data-k="${d.index}" style="min-width:150px;text-align:left"><span style="display:block;position:relative;overflow:hidden;background:#fff;aspect-ratio:${t.width}/${t.height}">${art}</span>範例 ${d.index} · ${d.texts.length} 個文字區</button>`;
   }).join('');
-  return `<div style="font-size:16px;line-height:1.6"><b>本頁套用方式</b><br><button class="chip ${s.templateMode==='master'?'on':''}" data-act="templateOriginal">使用原始母片版面</button>
+  /* 座標換算過的模板要說清楚，否則使用者會以為是工具自己把版面排歪。 */
+  const fitNotes=[
+    t.placeholderRescaled?'版面配置的座標與投影片尺寸不同，已等比換算（'+t.placeholderRescaled+'）。':'',
+    t.designCanvasFitted?'第 '+t.designCanvasFitted+' 張範例頁的圖形座標與投影片尺寸不符，已等比換算後套用。':''
+  ].filter(Boolean);
+  const fitBox=fitNotes.length?`<div role="status" style="margin-top:8px;padding:8px 10px;border-left:3px solid #3FD2C7;font-size:15px;line-height:1.55">${fitNotes.map(esc).join('<br>')}</div>`:'';
+  return `<div style="font-size:16px;line-height:1.6"><b>本頁套用方式</b><br><button class="chip ${s.templateMode==='master'?'on':''}" data-act="templateOriginal">使用原始母片版面</button>${fitBox}
     <details style="margin-top:8px"><summary>選擇範例頁設計（${(t.designSlides||[]).length} 頁）</summary><div class="hint">以下是裝飾與圖片的簡化預覽；文字及原生圖表不包含在縮圖內。選擇後保留本頁內容。</div><div style="display:flex;gap:8px;overflow:auto;padding:8px 0">${thumbs}</div></details>
     <div style="margin-top:8px;color:${issues.length?'#FFD993':'#82E8CC'}">${issues.length?'文字空間提醒：'+issues.map(esc).join('；'):'文字空間初步檢查通過；匯出仍需確認實際字型。'}</div>
+    ${templatePageCountNote(s)}
     <button class="chip" data-act="previewSplit" style="margin-top:8px">依每頁 5 項重新整理</button><div class="hint">同主題的自動續頁會先合併，再依 1～5、6～10 項順序分頁；模板空間不足或單項過長時才再拆分。原始文字保留。</div></div>`;
+}
+/* 這一頁匯出時實際會變成幾頁，直接寫在模板面板裡；編輯器內容不會被改寫。 */
+function templatePageCountNote(s){
+  if(typeof ExportPages==='undefined')return '';
+  let n=1;try{n=ExportPages.pagesFor(s);}catch(e){return '';}
+  if(n<2)return `<div class="hint" style="margin-top:8px">此頁匯出後仍為 1 頁。</div>`;
+  return `<div role="status" style="margin-top:8px;padding:8px 10px;border-left:3px solid #3FD2C7;font-size:15px;line-height:1.55">`+
+    `此頁匯出時會分成 ${n} 頁（自動續頁，標題會標示「（續 N）」）。編輯器保留原始完整內容。</div>`;
 }
 
 function templateModeInfo(t){
@@ -312,6 +327,7 @@ function builtinChartStyleBox(cur){
   }).join('');
   return `<div style="border:1px solid var(--line);border-radius:9px;padding:14px;margin-bottom:15px;background:#101821">
     <div class="lbl">內建圖表模板</div>
+    ${cur?.chart&&((cur.chart.labels||[]).length>10||(cur.chart.series||[]).length>2)?'<p role="status" class="hint">目前保留全部 '+(cur.chart.labels||[]).length+' 個分類、'+(cur.chart.series||[]).length+' 個數列。項目較多可能擁擠，建議選寬版面、改用表格，或回來源頁明確篩選資料；系統不會自動省略。</p>':''}
     <div style="font-size:16px;font-weight:700;margin-bottom:5px">選一套完整的圖表呈現</div>
     <div class="hint" style="margin-bottom:11px">同時調整色盤、格線、數值標籤、座標文字與折線粗細；不會改變資料、排序與來源。</div>
     <div class="chart-style-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${cards}</div>
@@ -344,7 +360,7 @@ function chartStyleLibraryBox(cur){
 function chartPanel(cur){
   const setup=chartDraftSetup(cur||{}), inline=slideNumberSeries(cur||{});
   const readyLabel=setup.table?`已找到數值資料：${setup.table.title}`:inline?'已找到本頁明示數值':'沒有可信數值，將使用內容結構圖';
-  return builtinChartStyleBox(cur)+chartStyleLibraryBox(cur)+`<div style="border:1px solid var(--line);border-radius:9px;padding:15px;background:#101821">
+  return (typeof ChartEditor!=='undefined'?ChartEditor.button(cur):'')+builtinChartStyleBox(cur)+chartStyleLibraryBox(cur)+`<div style="border:1px solid var(--line);border-radius:9px;padding:15px;background:#101821">
       <div class="lbl">依目前頁面生成圖表</div>
       <div style="font-size:16px;font-weight:700;line-height:1.45;margin-bottom:8px">把這頁重點轉成漂亮的分析圖表</div>
       <div class="hint" style="margin-bottom:13px">系統先讀取目前頁面；有可信數值時建立數據圖表，沒有數值時建立不含推估的內容結構圖。新頁會插在目前頁面後方。</div>

@@ -46,81 +46,29 @@ function numericColumns(table){
 }
 
 function monthlyScenarioEvidence(){
-  if(S.scenario!=='monthly') return {text:'',sales:false,cooling:false,details:null};
-  const tables=availableTables(), sig=t=>(t.headers||[]).join(' '),
-    salesTable=tables.find(t=>/縣市/.test(sig(t))&&/住宅/.test(sig(t))&&/售電/.test(sig(t))),
-    coolingTable=tables.find(t=>/縣市/.test(sig(t))&&/冷氣時/.test(sig(t)));
-  const find=(headers,re)=>headers.findIndex(h=>re.test(String(h||'').replace(/\s+/g,'')));
-  const county=v=>String(v||'').trim().replace(/^台(?=[北中南東])/,'臺');
-  const ym=(row,headers)=>{
-    const di=find(headers,/日期|年月/), yi=find(headers,/^年$|年度|年份/), mi=find(headers,/^月$|月份/);
-    const d=di>=0?String(row[di]||''):'';
-    const y=Number((d.match(/(20\d{2})/)||[])[1]||(yi>=0&&(String(row[yi]||'').match(/(20\d{2})/)||[])[1])||0);
-    const m=Number((d.match(/(?:年|[-/])(\d{1,2})(?:月|$)/)||[])[1]||(mi>=0&&(String(row[mi]||'').match(/\d{1,2}/)||[])[0])||0);
-    return {y,m};
-  };
-  const add=(map,key,value)=>map.set(key,(map.get(key)||0)+value), sales=new Map(), cooling=new Map();
-  let salesRows=0,coolingRows=0;
-  if(salesTable){
-    const h=salesTable.headers||[], ci=find(h,/縣市/), vi=find(h,/住宅.*售電|住宅部門/);
-    (salesTable.rows||[]).forEach(r=>{ const d=ym(r,h), c=county(r[ci]), v=chartNum(r[vi]);
-      if([2024,2025].includes(d.y)&&d.m>=6&&d.m<=9&&c&&v!==null){ add(sales,`${d.y}|${c}`,v); salesRows++; } });
-  }
-  if(coolingTable){
-    const h=coolingTable.headers||[], ci=find(h,/縣市/), vi=find(h,/冷氣時/);
-    (coolingTable.rows||[]).forEach(r=>{ const d=ym(r,h), c=county(r[ci]), v=chartNum(r[vi]);
-      if([2024,2025].includes(d.y)&&d.m>=6&&d.m<=9&&c&&v!==null){ add(cooling,`${d.y}|${c}`,v); coolingRows++; } });
-  }
-  const hasSales=sales.size>0, hasCooling=cooling.size>0;
-  if(!hasSales&&!hasCooling) return {text:'',sales:false,cooling:false,details:null};
-  const fmt=n=>Number(n||0).toLocaleString('zh-TW',{maximumFractionDigits:2}), pct=n=>Number.isFinite(n)?n.toFixed(2)+'%':'資料待補';
-  const lines=['【系統依完整 Excel 計算｜夏季定義為 6–9 月】'];
-  let details={salesRows,coolingRows,ranked:[]};
-  if(hasSales){
-    const six=new Set(['臺北市','新北市','桃園市','臺中市','臺南市','高雄市']);
-    const totals={},sixTotals={};
-    [2024,2025].forEach(y=>{ totals[y]=0;sixTotals[y]=0; sales.forEach((v,k)=>{ if(k.startsWith(y+'|')){totals[y]+=v;if(six.has(k.split('|')[1]))sixTotals[y]+=v;} }); });
-    const share=y=>totals[y]?sixTotals[y]/totals[y]*100:NaN, s24=share(2024),s25=share(2025);
-    lines.push(`售電資料：採用完整夏季列 ${salesRows} 筆。`,
-      `2024 年夏季住宅售電量總計：${fmt(totals[2024])} 度。`,
-      `2025 年夏季住宅售電量總計：${fmt(totals[2025])} 度。`,
-      `2024→2025 年同期變化率：${pct(totals[2024]?(totals[2025]/totals[2024]-1)*100:NaN)}。`,
-      `2024 年六都占比 ${pct(s24)}，非六都占比 ${pct(100-s24)}。`,
-      `2025 年六都占比 ${pct(s25)}，非六都占比 ${pct(100-s25)}。`,
-      `六都占比變化：${Number.isFinite(s24)&&Number.isFinite(s25)?(s25-s24).toFixed(2)+' 個百分點；相對變化 '+pct((s25/s24-1)*100):'資料待補'}。`,
-      `非六都占比變化：${Number.isFinite(s24)&&Number.isFinite(s25)?((100-s25)-(100-s24)).toFixed(2)+' 個百分點；相對變化 '+pct(((100-s25)/(100-s24)-1)*100):'資料待補'}。`);
-    const counties=Array.from(new Set(Array.from(sales.keys()).map(k=>k.split('|')[1]))), ranked=counties.map(c=>{
-      const a=sales.get('2024|'+c)||0,b=sales.get('2025|'+c)||0;
-      return {c,a,b,g:a?(b/a-1)*100:NaN,c24:cooling.get('2024|'+c),c25:cooling.get('2025|'+c)};
-    }).filter(x=>Number.isFinite(x.g)).sort((a,b)=>b.g-a.g).slice(0,10);
-    details=Object.assign(details,{totals,sixTotals,s24,s25,overall:totals[2024]?(totals[2025]/totals[2024]-1)*100:NaN,ranked});
-    lines.push('2024→2025 年夏季住宅售電量增幅前 10 高縣市（以各縣市 6–9 月合計排序）：');
-    ranked.forEach((x,i)=>lines.push(`${i+1}. ${x.c}：2024 年 ${fmt(x.a)} 度，2025 年 ${fmt(x.b)} 度，增幅 ${pct(x.g)}；`+
-      (hasCooling?`冷氣時 2024 年 ${fmt(x.c24)} 小時、2025 年 ${fmt(x.c25)} 小時，變化 ${fmt((x.c25||0)-(x.c24||0))} 小時。`:'冷氣時資料待補。')));
-  }
-  if(hasCooling) lines.push(`冷氣時資料：採用完整夏季列 ${coolingRows} 筆；數值為各縣市 6–9 月加總。`);
-  return {text:lines.join('\n'),sales:hasSales,cooling:hasCooling,details};
+  if(S.scenario!=='monthly')return {text:'',sales:false,cooling:false,details:null};
+  return MonthlyAnalysis.compute(availableTables());
 }
 
 function monthlyComputedMarkdown(calc){
   calc=calc||monthlyScenarioEvidence(); if(!calc.sales||!calc.details) return '';
-  const d=calc.details, fmt=n=>Number(n||0).toLocaleString('zh-TW',{maximumFractionDigits:2}), pct=n=>Number.isFinite(n)?n.toFixed(2)+'%':'資料待補',
+  const d=calc.details, fmt=n=>Number.isFinite(n)?n.toLocaleString('zh-TW',{maximumFractionDigits:2}):'資料待補', pct=n=>Number.isFinite(n)?n.toFixed(2)+'%':'資料待補',
     pp=(d.s25-d.s24), non24=100-d.s24, non25=100-d.s25,
     direction=d.overall>=0?'增加':'減少', lead=(d.ranked||[])[0];
-  const page1=`# 夏季住宅用電總覽\n\n> 2025 年夏季住宅用電較 2024 年${direction} ${pct(Math.abs(d.overall))}，六都占比變化 ${pp>=0?'+':''}${pp.toFixed(2)} 個百分點\n\n`+
+  const page1=`# 夏季住宅用電總覽\n\n> 2025 年夏季住宅用電較 2024 年${direction} ${pct(Math.abs(d.overall))}，六都占比變化 ${pp>=0?'+':''}${fmt(pp)} 個百分點\n\n`+
     `- 2024 年夏季（6–9 月）住宅部門售電量：${fmt(d.totals[2024])} 度\n`+
     `- 2025 年夏季（6–9 月）住宅部門售電量：${fmt(d.totals[2025])} 度\n`+
     `- 2024→2025 年夏季住宅用電同期變化率：${pct(d.overall)}\n`+
     `- 2024 年六都占比：${pct(d.s24)}；非六都占比：${pct(non24)}\n`+
     `- 2025 年六都占比：${pct(d.s25)}；非六都占比：${pct(non25)}\n`+
-    `- 六都占比變化：${pp>=0?'+':''}${pp.toFixed(2)} 個百分點；相對變化 ${pct((d.s25/d.s24-1)*100)}\n`+
-    `- 非六都占比變化：${(-pp)>=0?'+':''}${(-pp).toFixed(2)} 個百分點；相對變化 ${pct((non25/non24-1)*100)}\n`+
-    `備註：系統依兩份 Excel 完整資料計算；夏季定義為 6 月至 9 月，售電量單位為度。`;
+    `- 六都占比變化：${pp>=0?'+':''}${fmt(pp)} 個百分點；相對變化 ${pct((d.s25/d.s24-1)*100)}\n`+
+    `- 非六都占比變化：${(-pp)>=0?'+':''}${fmt(-pp)} 個百分點；相對變化 ${pct((non25/non24-1)*100)}\n`+
+    `備註：售電量已檢核兩年度及全台縣市 6–9 月覆蓋；缺少的冷氣時另外標示，售電量單位為度。`;
   const rankLines=(d.ranked||[]).map((x,i)=>`- 第 ${i+1} 名 ${x.c}：住宅用電增幅 ${pct(x.g)}；`+
-    (calc.cooling?`2024 年冷氣時 ${fmt(x.c24)} 小時，2025 年 ${fmt(x.c25)} 小時，變化 ${fmt((x.c25||0)-(x.c24||0))} 小時`:'冷氣時資料待補')).join('\n');
+    (calc.cooling?`2024 年冷氣時 ${fmt(x.c24)} 小時，2025 年 ${fmt(x.c25)} 小時，變化 ${fmt(Number.isFinite(x.c25)&&Number.isFinite(x.c24)?x.c25-x.c24:NaN)} 小時`:'冷氣時資料待補')).join('\n');
   const page2=`# 用電增幅縣市與冷氣時關聯\n\n> ${lead?`${lead.c}的住宅用電增幅最高（${pct(lead.g)}）`:'依 2024→2025 年夏季住宅用電變化率排序'}；冷氣時僅作並列觀察，不代表因果\n\n`+
     `- 排序口徑：各縣市 2024→2025 年 6–9 月住宅售電量合計變化率，由高至低排序\n${rankLines}\n`+
-    `備註：售電量與冷氣時均使用完整 Excel 夏季資料；兩者為並列觀察，未進行因果推論。`;
+    `備註：售電資料已檢核全台夏季覆蓋；冷氣時缺項標示資料待補。兩者為並列觀察，未進行因果推論。`;
   return page1+'\n\n'+page2;
 }
 
@@ -418,7 +366,8 @@ function aggregateDuplicateChartRows(rows,valueIndices,table){
   const normalized=x=>String(x||'').trim().replace(/^台(?=[北中南東])/,'臺').toLowerCase();
   const duplicate=new Set(rows.map(r=>normalized(r.label))).size<rows.length;
   if(!duplicate) return {rows,grouped:false};
-  const modes=valueIndices.map(i=>/%|％|率|占比|平均|單價|每/.test(String((table.headers||[])[i]||''))?'average':'sum');
+  if(valueIndices.some(i=>/%|％|率|占比|平均|單價|每/.test(String((table.headers||[])[i]||''))))throw new Error('同分類含多筆比率、占比或平均值，不能直接平均。請提供分子與分母或先整理成已核對的彙總表。');
+  const modes=valueIndices.map(()=>'sum');
   const groups=new Map();
   rows.forEach(row=>{
     const key=normalized(row.label); if(!key) return;
@@ -616,7 +565,8 @@ function insertChartSlide(spec){
 
 async function suggestChart(){
   const origin=S.slides[S.cursor], originText=JSON.stringify(slideChartContext(origin,S.cursor));
-  const confirmed=document.getElementById('chartCategoryPick')?manualChartSpec():null;
+  // 看見預設欄位不等於手動確認，否則每次都以相同預設覆蓋 AI 建議。
+  const confirmed=S.chartDraftFieldsConfirmed&&document.getElementById('chartCategoryPick')?manualChartSpec():null;
   const insertResult=spec=>{
     if(S.slides[S.cursor]!==origin||JSON.stringify(slideChartContext(origin,S.cursor))!==originText)
       throw new Error('原投影片已切換或修改，請在目前頁面重新生成圖表');

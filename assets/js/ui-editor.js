@@ -98,15 +98,24 @@ function topbar(inEditor){
      :`<div style="font-size:15px;font-weight:700;color:var(--paper)">${S.wizard?'':'Slide Forge'}</div>`}
     <div style="flex:1"></div>
     ${usage().n?`<span class="mono" style="font-size:13px;color:var(--mute)">今日 ${usage().n} 次</span>`:''}
-    ${inEditor?`<button class="btn sm" data-act="present">預覽</button>
-      ${aiReady()?`<button class="btn sm" data-act="regen" ${S.busy?'disabled':''}>重生本頁（1 次）</button>
-      <button class="btn sm" data-act="genAll" ${S.busy?'disabled':''}>逐頁精修（${S.slides.length} 次）</button>`:''}
-      <button class="btn sm" data-act="chartAi">＋ 圖表</button>
+    ${inEditor?`<button class="btn sm" data-act="present">整份預覽</button>
+      <details class="workflow-disclosure workflow-toolbar-more"><summary>進階工具</summary><div class="workflow-disclosure-body">
+      <button class="btn sm" data-act="${aiReady()?'regen':'settings'}" ${S.busy?'disabled':''}>AI 重生本頁（1 次）${aiReady()?'':' · 先設定'}</button>
+      <button class="btn sm" data-act="${aiReady()?'genAll':'settings'}" ${S.busy?'disabled':''}>AI 逐頁精修（${S.slides.length} 次）${aiReady()?'':' · 先設定'}</button>
+      ${!aiReady()?'<p class="hint" role="status">尚未設定 AI。點上方功能先開啟設定；完成後請再次選擇，不會自動生成或扣用額度。</p>':''}
+      <button class="btn sm" data-act="chartAi">新增圖表</button><button class="btn sm" data-open-mascot>吉祥物圖片與 AI 配置</button></div></details>
       <button class="btn sm pri" data-act="tabExport">匯出</button>`:''}
     <button class="btn sm" data-act="settings">${S.cfg.key?'設定':'設定金鑰'}</button>
   </div>`;
 }
 
+/* 這一頁匯出後會不只一頁時，直接標在縮圖下面，不必等匯出完才發現。 */
+function exportPagesBadge(s){
+  if(typeof ExportPages==='undefined')return '';
+  let n=1;try{n=ExportPages.pagesFor(s);}catch(e){return '';}
+  if(n<2)return '';
+  return `<div class="mono" style="font-size:12px;color:var(--cy);margin-top:3px">匯出 ${n} 頁（自動續頁）</div>`;
+}
 function viewEditor(){
   const st=previewStyle(), cur=S.slides[S.cursor];
   const rail = S.slides.map((s,i)=>`
@@ -118,6 +127,7 @@ function viewEditor(){
         <span>${String(i+1).padStart(2,'0')} ${LAYOUTS[s.layout]}</span>
         <span style="color:${s.status==='draft'?'var(--mute)':s.status==='edited'?'var(--cy)':'var(--mark)'}">${s.status==='draft'?'草稿':s.status==='edited'?'已改':'已生成'}</span>
       </div>
+      ${exportPagesBadge(s)}
       <div style="display:flex;gap:4px;margin-top:4px">
         <button class="btn xs" data-act="up" data-i="${i}">↑</button>
         <button class="btn xs" data-act="down" data-i="${i}">↓</button>
@@ -156,30 +166,40 @@ function viewEditor(){
     insp = textPanel(cur,st);
   }else if(S.tab==='chart' && cur){
     insp = chartPanel(cur);
+  }else if(S.tab==='mascot'){
+    insp = '<h3>吉祥物圖片與 AI 配置</h3><p>先上傳圖片，再選左側投影片。手動套用不需金鑰；AI 建議需確認傳送。</p>'+Mascot.panel();
   }else if(S.tab==='style'){
-    insp = `<h3 class="style-section-title">整份簡報的風格</h3><p class="hint">這裡影響全篇。本頁文字、圖表與版面請在畫布下方或對應分頁調整。</p>`+templateBox()+`<details class="style-options" ${S.pptTemplate?'':'open'}><summary>網站配色與 AI 風格</summary>${styleBox()}</details><div class="hint" style="margin-top:12px">換風格會套用到所有頁面，內容不動。若已上傳 PPTX 母片，下載時以母片的字型與配色優先。</div>`;
+    insp = `<h3 class="style-section-title">風格微調</h3><p class="hint">本頁版面可在畫布下方調整；全篇外觀可按「返回整體風格設定」。</p>`+WorkflowUI.disclosure('editor-template','母片相容性與進階設定',templateBox())+WorkflowUI.disclosure('editor-style','網站配色與 AI 風格',styleBox());
   }else{
     const templateInfo=templateModeInfo(S.pptTemplate);
+    /* 編輯器頁數與匯出頁數以前只顯示前者，兩邊對不上時完全沒有線索。 */
+    let exportTotal=S.slides.length, exportNote='';
+    if(typeof ExportPages!=='undefined'){
+      try{exportTotal=ExportPages.total();exportNote=ExportPages.note();}catch(e){}
+    }
     insp = `<div class="field"><div class="lbl">PowerPoint</div>
         <div style="border:1px solid var(--line);border-radius:7px;padding:10px 12px;margin-bottom:10px;font-size:14px;line-height:1.65;color:var(--mute)">
           預計檔名：<b style="color:var(--paper)">${esc(pptxFileName())}</b><br>
-          編輯器頁數：<b style="color:var(--paper)">${S.slides.length} 頁</b><br>
-          ${S.pptTemplate?'已上傳 PPTX，匯出會優先沿用原始母片、背景、Logo、頁尾、字型與配色。':'尚未上傳 PPTX；仍可匯出，但會使用網站風格，無法取得 White and Blue 樣板的母片與背景。'}
+          編輯器頁數：<b style="color:var(--paper)">${S.slides.length} 頁</b>${exportTotal!==S.slides.length?` → 匯出頁數：<b style="color:var(--cy)">${exportTotal} 頁</b>`:'　（匯出頁數相同）'}<br>
+          ${S.pptTemplate?'已上傳 PPTX，匯出會優先沿用原始母片、背景、Logo、頁尾、字型與配色。':'未上傳 PPTX，將使用目前網站選用風格，仍可正常匯出；也可自由上傳其他 PPTX 套版。'}
         </div>
+        ${exportNote?`<div role="status" style="border-left:3px solid var(--cy);padding:8px 10px;margin-bottom:10px;font-size:14px;line-height:1.6;color:var(--mute)">${esc(exportNote)}</div>`:''}
         ${S.pptTemplate?`<div style="border:1px solid var(--cy);background:#0C2224;color:var(--cy);border-radius:7px;padding:10px 12px;margin-bottom:10px;font-size:14px;line-height:1.6">✓ 已載入版型：${esc(S.pptTemplate.name)}<br><b style="color:var(--paper)">匯出套用方式：${esc(templateInfo.label)}</b><br><span style="color:var(--mute)">${esc(templateInfo.detail)}</span></div>`:''}
         <button class="btn pri full" data-act="pptx" ${S.busy?'disabled':''}>匯出可編輯 PPTX</button>
-        <div class="hint">每個文字方塊與圖表都可在 PowerPoint 編輯，講稿放在備忘稿。${S.pptTemplate?'匯出時會依上方顯示的安全模式處理版型；若原版面空間不足，會先要求調整或建立續頁，不會用新框覆蓋母片。':'第一次匯出要等幾秒載入。'}</div></div>
+        <div class="hint" style="font-size:16px;line-height:1.7">匯出後仍可編輯：本工具生成的數值圖表為 PowerPoint 原生圖表，可選取圖表後使用「圖表設計 → 編輯資料」修改數字及分類，也可調整配色。原生表格可直接修改儲存格；內容流程圖以可編輯文字與圖形呈現。母片中的背景圖片與 Logo 不會因此變成可拆解的圖形。講稿放在備忘稿。<br>頁碼：封面預設不顯示，但計入總頁數；其餘頁面顯示「目前頁／總頁數」，並依匯出續頁重新計算。${S.pptTemplate?'若母片已有原生頁碼，會沿用並避免重複加入。':''}<br>文字空間不足等排版風險會提示需微調的頁碼，仍可匯出。</div></div>
       <div class="field"><div class="lbl">大綱</div>
         <button class="btn full" data-act="md">匯出大綱 Markdown</button></div>`;
   }
 
   return `${topbar(true)}
+  <div class="workflow-editor-heading workflow-heading"><b>逐頁微調與匯出</b><button class="btn" data-return-style>返回整體風格設定</button>${WorkflowUI.help('如何微調與匯出','選左側投影片，直接修改畫面文字，或使用右側圖表、文字與風格工具。返回整體風格設定會保留文字、圖表與逐頁設定，但更換母片後仍需核對位置。完成後按匯出可編輯 PPTX。')}${S.reviewPreviewWarning?'<div role="status">'+esc(S.reviewPreviewWarning)+'</div>':''}</div>
   <div class="editor-shell" style="display:flex;flex:1;min-height:0">
     <div id="rail" class="scroll" style="width:168px;border-right:1px solid var(--line);padding:10px;background:var(--panel);flex:0 0 auto">
       ${rail}<button class="btn sm full rail-add" data-act="add">＋ 新增一頁</button>
     </div>
     <div class="scroll editor-canvas" style="flex:1;min-width:0;padding:26px;display:flex;flex-direction:column;align-items:center;gap:14px">
       <div class="editor-preview-card" style="width:100%;max-width:880px;border:1px solid var(--line);border-radius:8px;overflow:hidden;box-shadow:0 18px 50px rgba(0,0,0,.45)">
+        ${outlineMappingLabel(cur)}
         <div class="frame"><div class="stage" id="mainStage">${cur?renderSlide(cur,st,S.cursor,S.slides.length,true):''}</div></div>
         ${S.pptTemplate?`<details class="template-edit-controls"><summary>編輯本頁母片與文字區域 <span>選版、縮字方式、避開插圖</span></summary><div style="display:grid;gap:8px;padding:14px;background:#101821;border-top:1px solid var(--line)">
           ${templateChoicePanel(cur)}
@@ -203,13 +223,13 @@ function viewEditor(){
           </div>
         </div></details>`:''}
       </div>
-      <div style="width:100%;max-width:880px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <details class="workflow-disclosure" style="width:100%;max-width:880px"><summary>調整本頁版型／重新整理全篇（進階）</summary><div class="workflow-disclosure-body" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <span class="mono" style="font-size:13px;color:var(--mute)">版型</span>
         <button class="chip" data-act="autoArrangeDeck">依內容整理全篇版型</button>
         ${Object.keys(LAYOUTS).filter(k=>k!=='chart').map(k=>`<button class="chip ${cur&&cur.layout===k?'on':''}" data-act="layout" data-k="${k}">${LAYOUTS[k]}</button>`).join('')}
         <span style="flex:1"></span>
         <button class="btn sm" data-act="undo" ${cur&&(cur.history||[]).length?'':'disabled'}>復原</button>
-      </div>
+      </div></details>
       <div style="width:100%;max-width:880px;font-size:14px;color:var(--mute);line-height:1.7">
         點畫面上的文字就能改，滑鼠移開就存好了。切換版型只重新安排內容，不會刪除原始資料。</div>
     </div>
@@ -279,6 +299,7 @@ function viewChartAI(){
       </div>
       <div class="hint" style="margin:10px 0">排名會由高至低；時間欄位保持原始順序。圓環圖只使用主要數值，負數會自動改為柱狀圖。</div>
       <button class="btn pri full" data-act="chartBuildManual">依這些欄位建立可編輯圖表</button>
+      <div class="hint" style="margin-top:8px;font-size:16px;line-height:1.6">匯出 PPTX 後仍是原生可編輯圖表，不是圖片。可在 PowerPoint 選取圖表 → 圖表設計 → 編輯資料，修改數字與分類。</div>
     </div>`:(setup.tables.length?`<details style="margin:14px 0"><summary>改由我指定資料表</summary><label>本頁未自動配對；確認相關性後可手動選擇<select data-chart-table style="width:100%"><option value="" selected disabled>請選擇資料表</option>${setup.tables.map(t=>`<option value="${esc(t.id)}">${esc(t.title)}</option>`).join('')}</select></label></details>`:'');
   const evidenceBox=evidence.hit?`<div style="border:1px solid var(--line);border-radius:8px;padding:11px 13px;margin:0 0 14px;font-size:14px;line-height:1.65">
       <span class="lbl">內容對應校驗</span><b style="color:var(--paper)">${esc(evidence.confidenceLabel)}</b>｜${esc(evidence.hit.table.title)}<br>

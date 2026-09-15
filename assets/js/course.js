@@ -83,7 +83,7 @@ function scenarioTemplateStatus(){
 function autoPageRecommendation(){
   const sc=currentScenario(), raw=sourceMaterial(30000), tables=availableTables();
   const rowCount=tables.reduce((sum,t)=>sum+Math.max(0,Number((t.rows||[]).length)||0),0);
-  const base=sc&&S.scenario!=='own' ? Math.max(3,Number(sc.pages)||3)+(sc.includeCover?1:0) : 4;
+  const base=sc&&S.scenario!=='own' ? Math.max(3,Number(sc.pages)||3)+(sc.includeCover?1:0)+(sc.includeAgenda?1:0)+(sc.includeClosing?1:0) : 4;
   const textPages=Math.min(6,Math.floor(raw.length/1700));
   const tablePages=Math.min(5,tables.length+(rowCount>40?1:0)+(rowCount>150?1:0));
   const sourcePages=Math.min(3,Math.floor(Math.max(0,enabledUploads().length-1)/2));

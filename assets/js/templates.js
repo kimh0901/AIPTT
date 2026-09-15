@@ -54,6 +54,7 @@ function layoutRole(placeholders,name){
   if(/quote|引言|語錄/.test(n)) return 'quote';
   if(/closing|thank|結尾|謝謝|致謝/.test(n)) return 'closing';
   if(/stat|number|數據|數字|kpi/.test(n)) return 'stat';
+  if(/section header|section divider|section|章節|區段|段落|分隔/.test(n)&&!contentNamed) return 'section';
   if(types.includes('ctrTitle')||(/title slide|封面|標題投影片/.test(n)&&types.includes('subTitle'))) return 'cover';
   /* 章節分隔版面的標題框通常在內容框下方，另立一類，不要當成一般內文版面優先使用 */
   if(/section header|section divider|section|章節|段落|分隔/.test(n)&&!contentNamed) return 'section';
@@ -238,6 +239,57 @@ async function parseChartStyleLibrary(zip,sourceName,themeColors){
       {id:'template-dark',name:'深色趨勢',desc:'深灰繪圖區搭配暖色線條'}]};
 }
 
+/* 範例投影片的座標與投影片尺寸不符時等比換算。
+   有些 PPTX 的投影片尺寸被改過，頁面上的圖形卻仍是原畫布的座標：
+   內容只出現在左上角一小塊，或裝飾被裁掉一大半。換算只影響套版計算與預覽，
+   原始檔案、文字與數值都不變。 */
+function designShapeBounds(design){
+  const rects=[...((design&&design.preview)||[]),...((design&&design.texts||[]).map(t=>t.rect))]
+    .filter(r=>r&&Number.isFinite(r.x)&&Number.isFinite(r.y)&&Number(r.w)>0&&Number(r.h)>0);
+  if(rects.length<2) return null;
+  return {minX:Math.min(...rects.map(r=>r.x)),minY:Math.min(...rects.map(r=>r.y)),
+    maxX:Math.max(...rects.map(r=>r.x+r.w)),maxY:Math.max(...rects.map(r=>r.y+r.h))};
+}
+function designCanvasScale(design,W,H){
+  const b=designShapeBounds(design);
+  if(!b||!(W>0&&H>0)||!(b.maxX>0&&b.maxY>0)) return 1;
+  /* 出血（圖形超出版面）本來就常見，要以這一頁自己的範圍判斷；
+     整頁照另一個畫布畫時，負座標也會等比放大，不能拿投影片尺寸去量。 */
+  if(b.minX<-b.maxX*.35||b.minY<-b.maxY*.35) return 1;
+  const k=Math.min(W/b.maxX,H/b.maxY);
+  if(k>.77&&k<1.30) return 1;                       // 差距不大就不動
+  return Math.max(.2,Math.min(5,k));
+}
+function scaleDesignRect(r,k){ return Object.assign({},r,{x:r.x*k,y:r.y*k,w:r.w*k,h:r.h*k}); }
+/* 只縮放圖形本身的位置與大小；群組內是相對座標（chOff／chExt），會一起跟著變。 */
+function scaleDesignShapeXml(xml,k){
+  let doc; try{ doc=xmlDoc(xml,'裝飾圖形'); }catch(e){ return xml; }
+  const root=doc.documentElement;
+  const holder=Array.from(root.children||[]).find(n=>n.localName==='spPr'||n.localName==='grpSpPr');
+  const xfrm=holder&&Array.from(holder.children||[]).find(n=>n.localName==='xfrm');
+  if(!xfrm) return xml;
+  const kids=Array.from(xfrm.children||[]);
+  const off=kids.find(n=>n.localName==='off'),ext=kids.find(n=>n.localName==='ext');
+  const num=(el,a)=>Number(el.getAttribute(a)||0);
+  if(off){ off.setAttribute('x',String(Math.round(num(off,'x')*k))); off.setAttribute('y',String(Math.round(num(off,'y')*k))); }
+  if(ext){ ext.setAttribute('cx',String(Math.max(1,Math.round(num(ext,'cx')*k)))); ext.setAttribute('cy',String(Math.max(1,Math.round(num(ext,'cy')*k)))); }
+  return new XMLSerializer().serializeToString(root);
+}
+function fitDesignSlidesToCanvas(designSlides,W,H){
+  const fitted=[];
+  (designSlides||[]).forEach(d=>{
+    const k=designCanvasScale(d,W,H);
+    if(k===1) return;
+    d.preview=(d.preview||[]).map(p=>Object.assign(scaleDesignRect(p,k),
+      {src:p.src,fill:p.fill,rot:p.rot,obstacle:p.obstacle,lineObject:p.lineObject}));
+    d.texts=(d.texts||[]).map(x=>Object.assign({},x,{rect:scaleDesignRect(x.rect,k),size:(Number(x.size)||0)*k}));
+    d.deco=(d.deco||[]).map(xml=>scaleDesignShapeXml(xml,k));
+    d.canvasScaled=Number(k.toFixed(3));
+    fitted.push(d.index+'（×'+k.toFixed(2)+'）');
+  });
+  return fitted.join('、');
+}
+
 async function parsePptTemplate(file){
   if(!/\.pptx$/i.test(file.name)) throw new Error('請上傳 .pptx 格式的 PowerPoint 版型');
   const JSZip=(await loadLib('jszip')).lib, buffer=await file.arrayBuffer(), zip=await JSZip.loadAsync(buffer);
@@ -315,6 +367,7 @@ async function parsePptTemplate(file){
     try{ countDeco(xmlDoc(await zipText(zip,path),path)); }catch(e){}
   }
   const designSlides=await parseDesignSlides(zip,width,height);
+  const designCanvasFitted=fitDesignSlidesToCanvas(designSlides,width,height);
   const masterList=xmlList(pres,'sldMasterIdLst')[0];
   const canMergeMasters=!!masterList&&layouts.some(l=>l.path!=='__auto__'&&l.masterPath&&zip.file(l.masterPath));
   const designMode = (!canMergeMasters||masterDeco===0) && designSlides.some(d=>d.deco.length);
@@ -333,6 +386,7 @@ async function parsePptTemplate(file){
     colors,fonts,placeholderFit,designSlides,designMode,masterDeco,canMergeMasters,structureMode,
     nativeCharts,embeddedBooks,chartStyleLibrary,chartStyleCompatibility,chartDensity,
     skippedPromotional:Number(designSlides.skippedPromotional)||0,
+    designCanvasFitted:designCanvasFitted||'',
     designMap:designMode?autoDesignMap(designSlides,height):null};
 }
 
@@ -443,6 +497,9 @@ function templateLayoutFor(type,slide){
   const path=(slide&&slide.templateLayoutPath)||t.mapping[type]||t.mapping.bullets;
   const base=t.layouts.find(l=>l.path===path)||t.layouts[0]||null;
   if(slide&&slide.templateLayoutPath) return base;
+  // Native master templates must retain their mapped branded layout. A larger
+  // blank/section layout can omit logos which live on the original layout.
+  if(t.canMergeMasters&&!t.designMode)return base;
   if(slide&&(slide.templatePlainLayoutFor===t.name||slide.templateAutoSafeFor===t.name)){
     const sameMaster=(t.layouts||[]).filter(l=>!base||!base.masterPath||l.masterPath===base.masterPath);
     const pool=sameMaster.length?sameMaster:(t.layouts||[]);
@@ -496,7 +553,8 @@ async function restoreTemplate(){
     const file=new File([rec.buffer],rec.name||'template.pptx',
       {type:'application/vnd.openxmlformats-officedocument.presentationml.presentation'});
     S.pptTemplate=await parsePptTemplate(file);
-    if(S.templatePrefs&&S.templatePrefs.name===S.pptTemplate.name)
+    S.pptTemplate.sessionKey=(await TemplateSession.identify(file)).key;
+    if(S.templatePrefs&&S.templatePrefs.name===S.pptTemplate.name&&(!S.templatePrefs.key||S.templatePrefs.key===S.pptTemplate.sessionKey))
       S.pptTemplate.mapping=Object.assign({},S.pptTemplate.mapping,S.templatePrefs.mapping||{});
     S.tplPreview=true;
     render();
@@ -504,23 +562,7 @@ async function restoreTemplate(){
 }
 
 async function uploadPptTemplate(file){
-  toast('讀取 PowerPoint 母片');
-  try{
-    S.pptTemplate=await parsePptTemplate(file); S.templatePrefs={name:S.pptTemplate.name,mapping:S.pptTemplate.mapping}; S.tplPreview=true;
-    if(S.view==='editor') S.tab='style';
-    saveDraft();
-    try{ await idbTemplate('put',{name:file.name,buffer:await file.arrayBuffer()}); }catch(e){}
-    const mode=S.pptTemplate.structureMode;
-    toast(mode==='theme'
-      ? 'PPTX 已讀取；缺少標準母片結構，已切換成主題配色安全模式'
-      : mode==='designFallback'
-        ? 'PPTX 已讀取；已從範例投影片重建版面並自動開啟預覽'
-        : S.pptTemplate.placeholderFit===false
-          ? '母片已讀取；座標不一致，已改用安全版面並自動開啟預覽'
-          : '母片已讀取，已自動開啟套版預覽，可逐頁微調。圖表風格不會自動變更');
-    setTimeout(()=>done(),2600); render();
-  }
-  catch(e){ fail(e.message||'PPTX 母片讀取失敗'); }
+  return TemplateSession.upload(file);
 }
 
 function applyChartStyleToSlides(styleId,rerender=true){
