@@ -1,0 +1,29 @@
+.workflow-section{margin-bottom:20px;padding:16px;border:1px solid var(--line);border-radius:10px;background:var(--panel);min-width:0}
+.workflow-section h2{font-size:21px;margin:0 0 10px}.workflow-section p{line-height:1.65;overflow-wrap:anywhere}
+.workflow-disclosure{margin:12px 0;border:1px solid var(--line);border-radius:8px;min-width:0}
+.workflow-disclosure>summary{padding:13px;min-height:44px;box-sizing:border-box;cursor:pointer;font-weight:600;font-size:16px;color:var(--paper);overflow-wrap:anywhere}
+.workflow-disclosure>summary:focus-visible{outline:3px solid var(--cy);outline-offset:2px}
+.workflow-disclosure-body{padding:12px;min-width:0}.workflow-disclosure-body>*{max-width:100%;box-sizing:border-box}
+.workflow-toolbar-more{position:relative;margin:0}.workflow-toolbar-more>.workflow-disclosure-body{position:absolute;right:0;top:100%;z-index:60;min-width:240px;max-width:calc(100vw - 32px);background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 20px #0008;display:grid;gap:8px}
+.workflow-editor-heading{padding:10px 18px;border-bottom:1px solid var(--line);background:var(--panel);font-size:15px;line-height:1.65}
+.workflow-heading{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.workflow-heading h2{margin-bottom:0}.workflow-help{position:relative;font-weight:400;font-size:15px;line-height:1.65}.workflow-help summary{display:flex;align-items:center;justify-content:center;width:44px;height:44px;cursor:pointer;border:1px solid var(--line);border-radius:50%;color:var(--paper);list-style:none}.workflow-help summary::-webkit-details-marker{display:none}.workflow-help summary:focus-visible{outline:3px solid var(--cy)}.workflow-help[open]{flex-basis:100%}.workflow-help[open]>div{padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--paper);overflow-wrap:anywhere}.workflow-bookends{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}.workflow-bookends>div{display:flex;gap:6px;flex-wrap:wrap}
+@media(max-width:760px){.workflow-section{padding:12px}.workflow-toolbar-more>.workflow-disclosure-body{position:static;min-width:0}.workflow-editor-heading{padding:10px 12px}}
+.workflow-help summary{width:auto;min-height:48px;height:auto;gap:10px;padding:5px 13px 5px 6px;border-radius:12px;background:var(--panel);font-size:16px;font-weight:600;box-sizing:border-box}
+.workflow-help summary:hover,.workflow-help[open] summary{border-color:var(--cy)}
+.workflow-help-avatar{position:relative;width:40px;height:40px;flex:0 0 40px;display:block}
+.workflow-help-avatar img{display:block;width:40px;height:40px;object-fit:contain;background:#fff;border-radius:9px}
+.workflow-help-badge{position:absolute;right:-5px;top:-3px;width:19px;height:19px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:#ffe08a;color:#171d26;font-size:14px;font-weight:800;border:2px solid var(--panel);line-height:1}
+.workflow-help[open]>div{margin-top:8px;max-width:620px;box-sizing:border-box}.workflow-help[open]>div p{margin:6px 0 0}
+.workflow-tip-trigger{display:inline-flex;align-items:center;justify-content:center;flex:0 0 32px;width:32px;height:32px;padding:0;border:1px solid #8b9bb0;border-radius:50%;background:transparent;color:var(--paper);font:600 17px Georgia,serif;cursor:help}
+.workflow-tip-trigger:hover,.workflow-tip-trigger:focus-visible{background:#263747;border-color:var(--cy);outline:2px solid var(--cy);outline-offset:2px}
+.workflow-floating-tip{position:fixed;z-index:10000;width:320px;max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);overflow:auto;box-sizing:border-box;background:#172330;color:#f5f7fb;border:1px solid #8395ab;border-radius:8px;padding:12px 14px;box-shadow:0 6px 24px #0006;font-size:15px;line-height:1.65;overflow-wrap:anywhere}
+.workflow-floating-tip p{margin:5px 0 0}.workflow-floating-tip strong{font-size:15px}
+@media(pointer:coarse){.workflow-tip-trigger{width:44px;height:44px;flex-basis:44px}}
+/* Bookend editor only: never applies to slide text or export geometry. */
+.workflow-section fieldset{display:grid;gap:14px;min-width:0;max-width:100%;box-sizing:border-box;margin:16px 0 0;padding:16px;border:1px solid var(--line);border-radius:8px}
+.workflow-section fieldset legend{padding:0 6px;font-size:17px;font-weight:600;color:var(--paper)}
+.workflow-section fieldset label{display:grid;grid-template-columns:minmax(0,1fr);gap:7px;min-width:0;margin:0;font-size:16px;line-height:1.5;color:var(--paper)}
+.workflow-section fieldset input[data-bookend-field]{display:block;width:100%;max-width:100%;min-width:0;min-height:46px;box-sizing:border-box;margin:0;padding:10px 12px;border:1px solid #8493a6;border-radius:6px;background:#0d121a;color:#f5f7fb;font:inherit;line-height:1.5}
+.workflow-section fieldset input[data-bookend-field]:focus-visible{outline:2px solid var(--cy);outline-offset:2px}
+.workflow-section fieldset small{display:block;min-width:0;font-size:14px;line-height:1.65;color:var(--mute);overflow-wrap:anywhere}
+@media(max-width:760px){.workflow-section fieldset{padding:12px}}
